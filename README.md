@@ -1,0 +1,3 @@
+# tallymind
+
+Initialized with gonew.

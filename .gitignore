@@ -1,0 +1,14 @@
+bin/
+*.exe
+*.test
+*.out
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.log
+*.bean
+.DS_Store
+.vscode/
+.idea/
