@@ -60,13 +60,13 @@ type RespondMsgBody struct {
 }
 
 type WSClient struct {
-	wecomCfg  *config.WeComConfig
-	ledgerCfg *config.LedgerConfig
+	wecomCfg  config.WeComConfig
+	ledgerCfg config.LedgerConfig
 	llmClient *llm.Client
 	conn      *websocket.Conn
 }
 
-func NewWSClient(wecomCfg *config.WeComConfig, ledgerCfg *config.LedgerConfig, llmClient *llm.Client) *WSClient {
+func NewWSClient(wecomCfg config.WeComConfig, ledgerCfg config.LedgerConfig, llmClient *llm.Client) *WSClient {
 	return &WSClient{
 		wecomCfg:  wecomCfg,
 		ledgerCfg: ledgerCfg,

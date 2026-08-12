@@ -40,8 +40,8 @@ func NewTransactionHandler(ledgerCfg config.LedgerConfig) *TransactionHandler {
 	return &TransactionHandler{cfg: ledgerCfg}
 }
 
-// handleTransaction通用API接口
-func (h *TransactionHandler) handleTransaction(c *gin.Context) {
+// HandleTransaction通用API接口
+func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 	// 获取请求header
 	userID := cmp.Or(c.GetHeader("X-User-ID"), h.cfg.DefaultReporter)
 	sourceChannel := cmp.Or(c.GetHeader("X-Source-Channel"), "unknown_api_plugin")
