@@ -10,5 +10,6 @@ import (
 func main() {
 	cfg := config.Load()
 
-	log.Printf("[%s] Started | Env: %s | Debug: %t\n", "tallymind", cfg.AppEnv, cfg.Debug)
+	log.Printf("[INFO] tallymind 正在启动... | 环境: %s | 模式: %s | Debug: %t | LLM: %t | 消息推送: %t\n",
+		cfg.App.Env, cfg.App.RunMode, cfg.App.Debug, cfg.App.EnableLLM, cfg.App.EnableReporter)
 }

@@ -1,5 +1,18 @@
 // internal/handler/transaction.go
 
+// HandleTransaction 通用 HTTP 记账 API 接口
+// @Summary      通用记账 API 接口
+// @Description  接收标准 JSON 账单数据，校验后追加写入本地 Beancount 纯文本账本
+// @Tags         账单管理
+// @Accept       json
+// @Produce      json
+// @Param        X-User-ID         header    string                    false  "记账人 ID (如 husband)"
+// @Param        X-Source-Channel  header    string                    false  "渠道来源 (如 wecom_api_plugin)"
+// @Param        request           body      ledger.BatchTransactions  true   "账单请求体"
+// @Success      200               {object}  APIResponse               "成功返回"
+// @Failure      400               {object}  APIResponse               "参数校验或保存失败"
+// @Router       /api/v1/transaction [post]
+
 package handler
 
 import (
@@ -37,7 +50,7 @@ func (h *TransactionHandler) handleTransaction(c *gin.Context) {
 	reqCtx := ledger.RequestContext{
 		UserID:           userID,
 		Reporter:         userID,
-		sourceChannel:    sourceChannel,
+		SourceChannel:    sourceChannel,
 		DefaultCurrency:  h.cfg.DefaultCurrency,
 		FallbackCategory: h.cfg.FallbackCategory,
 		FallbackAccount:  h.cfg.FallbackAccount,
@@ -61,13 +74,20 @@ func (h *TransactionHandler) handleTransaction(c *gin.Context) {
 		})
 		return
 	}
+
+	//生成详细的友情摘要卡片 (包含日期、商户、备注、金额、分类、账户)
+	summaryText := req.ToSummaryString()
+
 	// 返回成功响应
-	log.Printf("[INFO] 成功记账 %d 笔| 发送者：%s | 渠道: %s\n", len(req.Transactions), userID, sourceChannel)
+	log.Printf("[INFO] API 记账成功 | 用户: %s | 渠道: %s |\n%s\n", userID, sourceChannel, summaryText)
 	c.JSON(http.StatusOK, APIResponse{
 		Code:    0,
-		Message: "已成功为你记录账单！",
+		Message: summaryText,
 		Data: gin.H{
-			"count": len(req.Transactions),
+			"count":   len(req.Transactions),
+			"user":    userID,
+			"channel": sourceChannel,
+			"details": req.Transactions, // 同时也把原生数组塞进 Data 里
 		},
 	})
 }
