@@ -4,7 +4,7 @@ package ledger
 import (
 	"cmp"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -32,7 +32,7 @@ func init() {
 
 	err := zh_translations.RegisterDefaultTranslations(validate, trans)
 	if err != nil {
-		log.Printf("[ERROR] RegisterDefaultTranslations 注册中文翻译失败: %v\n", err)
+		slog.Error("RegisterDefaultTranslations 注册中文翻译失败", "err", err)
 	}
 }
 
@@ -87,7 +87,7 @@ func (t *Transaction) Validate() error {
 	if err != nil {
 		if validationErrs, ok := err.(validator.ValidationErrors); ok {
 			for _, fieldErr := range validationErrs {
-				log.Printf("[WARN] 账单数据校验失败 | 详情: %v\n", fieldErr)
+				slog.Warn("账单数据校验失败", "err", err)
 				return fmt.Errorf("记账失败: %s", fieldErr.Translate(trans)) // 返回中文提示
 			}
 		}
@@ -112,6 +112,7 @@ func (t *Transaction) EnsureDefaults(ctx RequestContext) {
 
 	// 2. 科目检查与降级
 	if !hasStandardPrefix(t.Category) {
+		slog.Debug("科目格式不合规，自动降级", "raw_category", t.Category, "fallback", ctx.FallbackCategory)
 		t.Category = ctx.FallbackCategory
 		needsReview = true
 	}
@@ -251,7 +252,7 @@ func AppendBatchTransactions(basePath string, req BatchTransactions, ctx Request
 		if err != nil {
 			return fmt.Errorf("写入账单文件失败 [%s]: %w", targetPath, err)
 		}
-		log.Printf("[INFO] 成功写入账单到文件: %s\n", targetPath)
+		slog.Info("成功追加账单到文件", "path", targetPath)
 	}
 
 	return nil

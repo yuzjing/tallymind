@@ -4,7 +4,7 @@ package handler
 
 import (
 	"cmp"
-	"log"
+	"log/slog"
 	"net/http"
 	"tallymind/internal/config"
 	"tallymind/internal/ledger"
@@ -56,7 +56,7 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 	// Gin 的极简 JSON 绑定与自动校验
 	var req ledger.BatchTransactions
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[WARN] API 请求 JSON 解析失败: %v\n", err)
+		slog.Warn("API 请求 JSON 解析失败", "err", err)
 		c.JSON(http.StatusBadRequest, APIResponse{
 			Code:    400,
 			Message: "请求数据格式错误，请检查 JSON 格式",
@@ -65,7 +65,7 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 	}
 	// 调用 ledger 处理函数
 	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, req, reqCtx); err != nil {
-		log.Printf("[ERROR] 账单写入失败: %v\n", err)
+		slog.Error("账单写入失败", "err", err)
 		c.JSON(http.StatusBadRequest, APIResponse{
 			Code:    400,
 			Message: err.Error(),
@@ -77,7 +77,7 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 	summaryText := req.ToSummaryString()
 
 	// 返回成功响应
-	log.Printf("[INFO] API 记账成功 | 用户: %s | 渠道: %s |\n%s\n", userID, sourceChannel, summaryText)
+	slog.Info("通用 API 成功记账", "user", userID, "channel", sourceChannel, "summary", summaryText)
 	c.JSON(http.StatusOK, APIResponse{
 		Code:    0,
 		Message: summaryText,

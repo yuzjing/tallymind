@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"tallymind/internal/ledger"
 	"time"
@@ -150,7 +150,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string) (*ledger
 
 	// 4. 检查 HTTP 状态码
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[ERROR] LLM API 返回异常 (HTTP %d): %s\n", resp.StatusCode, string(respBytes))
+		slog.Error("LLM API 返回异常", "status", resp.StatusCode, "body", string(respBytes))
 		return nil, fmt.Errorf("LLM API 调用失败 (HTTP %d)", resp.StatusCode)
 	}
 
@@ -175,7 +175,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string) (*ledger
 	// 7. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
 	var batch ledger.BatchTransactions
 	if err := json.Unmarshal([]byte(content), &batch); err != nil {
-		log.Printf("[ERROR] LLM 返回文本无法解析为 BatchTransactions | 原始文本: %s | 错误: %v\n", content, err)
+		slog.Error("LLM 返回文本无法解析为 BatchTransactions", "raw_content", content, "err", err)
 		return nil, fmt.Errorf("AI 提取的数据无法转为合规账单: %w", err)
 	}
 

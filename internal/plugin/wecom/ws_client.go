@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"tallymind/internal/config"
@@ -147,7 +147,7 @@ func (ws *WSClient) safeWriteJSON(v any) error {
 	}
 	// 打印我们发给企微的原始文本
 	bytes, _ := json.Marshal(v)
-	log.Printf("[DEBUG ⬅️ 我方发送] %s\n", string(bytes))
+	slog.Debug("WSS 我方发送原始帧", "raw", string(bytes))
 
 	return ws.conn.WriteJSON(v)
 }
@@ -160,13 +160,13 @@ func (ws *WSClient) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[INFO] 收到停止信号，企微 WSS 长连接服务已安全退出")
+			slog.Info("收到停止信号，企微 WSS 长连接服务已安全退出")
 			return
 		default:
-			log.Printf("[INFO] 正在建立企微 WSS 长连接 (%s)...\n", wsURL)
+			slog.Debug("正在建立企微 WSS 长连接", "URL", wsURL)
 			err := ws.connectAndSubscribe(ctx, wsURL)
 			if err != nil {
-				log.Printf("[WARN] 企微 WSS 长连接异常断开: %v | 5 秒后自动尝试重连...\n", err)
+				slog.Debug("企微 WSS 长连接异常断开", "err", err, " 5 秒后自动尝试重连...")
 				time.Sleep(5 * time.Second)
 			}
 		}
@@ -185,9 +185,10 @@ func (ws *WSClient) connectAndSubscribe(ctx context.Context, wsURL string) error
 
 	// 1. 发起企微官方规定的 aibot_subscribe 鉴权订阅包
 	if err := ws.suscribe(); err != nil {
+
 		return fmt.Errorf("[ERROR] 企微 WSS 长连接鉴权失败: %w", err)
 	}
-	log.Println("[INFO] 企微 WSS 长连接鉴权订阅成功！进入 24 小时消息监听状态...")
+	slog.Info("WSS 长连接鉴权成功，进入 24 小时消息监听状态...")
 
 	// 2. 后台启动 15s 定时 Ping 心跳保活协程
 	go ws.startHeartbeat(ctx)
@@ -201,18 +202,18 @@ func (ws *WSClient) connectAndSubscribe(ctx context.Context, wsURL string) error
 		}
 
 		// ⭐️ 核心黑科技：在控制台 100% 打印企微发过来的原始 JSON 明文！
-		log.Printf("[DEBUG ➔ 企微发来] %s\n", string(rawBytes))
+		slog.Debug("WSS 企微发来原始帧", "raw", string(rawBytes))
 
 		// 尝试解析外壳帧
 		var frame WSFrame
 		if err := json.Unmarshal(rawBytes, &frame); err != nil {
-			log.Printf("[WARN] 原始数据反序列化为 WSFrame 失败: %v\n", err)
+			slog.Debug("原始数据反序列化为 WSFrame 失败", "raw", err)
 			continue
 		}
 
 		// 如果企微返回了错误码，直接在控制台高亮打印！
 		if frame.ErrCode != 0 {
-			log.Printf("[ERROR ❌ 企微官方报错] 错误码: %d | 错误信息: %s\n", frame.ErrCode, frame.ErrMsg)
+			slog.Debug("企微官方报错", "错误码", frame.ErrCode, "错误信息", frame.ErrMsg)
 		}
 
 		// 处理消息帧
@@ -253,7 +254,8 @@ func (ws *WSClient) startHeartbeat(ctx context.Context) {
 				},
 			}
 			if err := ws.safeWriteJSON(pingFrame); err != nil {
-				log.Printf("[WARN] 心跳包发送失败: %v", err)
+
+				slog.Debug("WSS 心跳包发送失败", "err", err) // 重连失败，继续等待下一次心跳
 				return
 			}
 		}
@@ -269,7 +271,7 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 
 	var msgBody MsgCallbackBody
 	if err := json.Unmarshal(frame.Body, &msgBody); err != nil {
-		log.Printf("[WARN] 解析消息回调体失败: %v", err)
+		slog.Debug("消息回调体反序列化失败", "raw", err)
 		return
 	}
 
@@ -277,7 +279,7 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 	userID := msgBody.From.UserID
 	reporter := cmp.Or(userID, ws.ledgerCfg.DefaultReporter)
 
-	log.Printf("[INFO] 收到企微长连接消息 | 用户: %s | 内容: %s\n", userID, userText)
+	slog.Debug("WSS 收到企微消息回调", "用户ID", userID, "消息内容", userText)
 
 	// 1. 组装 RequestContext
 	reqCtx := ledger.RequestContext{
@@ -293,7 +295,8 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 	var batch *ledger.BatchTransactions
 	// ⭐️ 如果大模型未初始化 (ENABLE_LLM=false)，自动开启 Mock 假数据测试！
 	if ws.llmClient == nil {
-		log.Println("[INFO] 🧪 ENABLE_LLM=false，使用 MVP Mock 数据测试长连接记账全流程...")
+
+		slog.Info("ENABLE_LLM=false，使用 MVP Mock 数据测试长连接记账全流程...")
 
 		batch = &ledger.BatchTransactions{
 			Transactions: []ledger.Transaction{
@@ -310,11 +313,12 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 		}
 	} else {
 		// 正常调用大模型解析
-		log.Println("[INFO] 🤖 正在调用 DeepSeek 大模型提取账单...")
+		slog.Info("🤖 正在调用 DeepSeek 大模型提取账单...")
 		var err error
 		batch, err = ws.llmClient.ParseTransaction(ctx, userText)
 		if err != nil {
-			log.Printf("[WARN] 大模型提取账单失败: %v\n", err)
+
+			slog.Error("大模型解析失败", "err", err) //
 			ws.respondMsg(frame.Headers.ReqID, msgBody.ResponseURL, notifier.Message{
 				Type:    notifier.TypeText,
 				Content: fmt.Sprintf("AI 解析失败: %v", err),
@@ -325,7 +329,7 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 
 	// 3. 追加写入 Beancount 文件
 	if err := ledger.AppendBatchTransactions(ws.ledgerCfg.FilePath, *batch, reqCtx); err != nil {
-		log.Printf("[ERROR] 追加写入账单文件失败: %v\n", err)
+		slog.Error("追加写入账单文件失败", "err", err)
 		ws.respondMsg(frame.Headers.ReqID, msgBody.ResponseURL, notifier.Message{
 			Type:    notifier.TypeText,
 			Content: fmt.Sprintf("保存账单失败: %v", err),
@@ -359,7 +363,7 @@ func (ws *WSClient) respondMsg(reqID string, responseURL string, msg notifier.Me
 	if err != nil {
 		return
 	}
-	log.Printf("[WARN] WSS 长连接回传失败 (%v)，尝试使用 response_url 降级回复...\n", err)
+	slog.Debug("WSS 长连接回传失败，尝试使用 response_url 降级回复...", "err", err, "responseURL", responseURL)
 
 	if responseURL != "" {
 		go func() {
@@ -370,7 +374,7 @@ func (ws *WSClient) respondMsg(reqID string, responseURL string, msg notifier.Me
 				resp, err := client.Do(req)
 				if err == nil {
 					resp.Body.Close()
-					log.Printf("[INFO] 企微 response_url 快捷回复成功 (HTTP %d)\n", resp.StatusCode)
+					slog.Debug("企微 response_url 快捷回复成功 ", "code", resp.StatusCode)
 				}
 			}
 		}()
