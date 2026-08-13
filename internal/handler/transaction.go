@@ -1,18 +1,5 @@
 // internal/handler/transaction.go
 
-// HandleTransaction 通用 HTTP 记账 API 接口
-// @Summary      通用记账 API 接口
-// @Description  接收标准 JSON 账单数据，校验后追加写入本地 Beancount 纯文本账本
-// @Tags         账单管理
-// @Accept       json
-// @Produce      json
-// @Param        X-User-ID         header    string                    false  "记账人 ID (如 husband)"
-// @Param        X-Source-Channel  header    string                    false  "渠道来源 (如 wecom_api_plugin)"
-// @Param        request           body      ledger.BatchTransactions  true   "账单请求体"
-// @Success      200               {object}  APIResponse               "成功返回"
-// @Failure      400               {object}  APIResponse               "参数校验或保存失败"
-// @Router       /api/v1/transaction [post]
-
 package handler
 
 import (
@@ -40,7 +27,18 @@ func NewTransactionHandler(ledgerCfg config.LedgerConfig) *TransactionHandler {
 	return &TransactionHandler{cfg: ledgerCfg}
 }
 
-// HandleTransaction通用API接口
+// HandleTransaction 通用 HTTP 记账 API 接口
+// @Summary      通用记账 API 接口
+// @Description  接收标准 JSON 账单数据，校验后追加写入本地 Beancount 纯文本账本
+// @Tags         账单管理
+// @Accept       json
+// @Produce      json
+// @Param        X-User-ID         header    string                    false  "记账人 ID (如 husband)"
+// @Param        X-Source-Channel  header    string                    false  "渠道来源 (如 wecom_api_plugin)"
+// @Param        request           body      ledger.BatchTransactions  true   "账单请求体"
+// @Success      200               {object}  APIResponse               "成功返回"
+// @Failure      400               {object}  APIResponse               "参数校验或保存失败"
+// @Router       /api/v1/transaction [post]
 func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 	// 获取请求header
 	userID := cmp.Or(c.GetHeader("X-User-ID"), h.cfg.DefaultReporter)

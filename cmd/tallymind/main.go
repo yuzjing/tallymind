@@ -1,4 +1,5 @@
 // cmd/tallymind/main.go
+
 package main
 
 import (
@@ -7,7 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	_ "tallymind/docs" // 自动生成的 docs
 	"time"
+
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/gin-gonic/gin"
 
@@ -52,6 +57,7 @@ func main() {
 
 		r := gin.Default()
 		txHandler := handler.NewTransactionHandler(cfg.Ledger)
+		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
 		log.Printf("[INFO] 🌐 HTTP API 服务已启动 | 监听端口 :%s\n", cfg.App.Port)
 

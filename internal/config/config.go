@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/joho/godotenv"
+
 	"tallymind/internal/llm" // 直接组合 llm 包的 Config
 )
 
@@ -59,6 +61,8 @@ type Config struct {
 
 // Load 从环境变量中加载全部配置
 func Load() *Config {
+	_ = godotenv.Load()
+
 	return &Config{
 		App: AppConfig{
 			Env:      cmp.Or(os.Getenv("APP_ENV"), "development"),

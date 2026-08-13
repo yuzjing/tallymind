@@ -1,0 +1,131 @@
+definitions:
+  handler.APIResponse:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  ledger.BatchTransactions:
+    properties:
+      transactions:
+        items:
+          $ref: '#/definitions/ledger.Transaction'
+        type: array
+    required:
+    - transactions
+    type: object
+  ledger.Metadata:
+    properties:
+      beneficiary:
+        description: 受益人 (如 family/baby)
+        type: string
+      discount_amount:
+        description: 优惠金额
+        type: string
+      extra:
+        additionalProperties:
+          type: string
+        description: 动态扩展字典，支持任意自定义元数据
+        type: object
+      invoice_status:
+        description: 发票状态 (pending/done)
+        type: string
+      link:
+        description: 关联单号 (写为 ^order-12345)
+        type: string
+      location:
+        description: 地点
+        type: string
+      original_amount:
+        description: 优惠前原价
+        type: string
+      reporter:
+        description: 记账人/操作人 (如 husband)
+        type: string
+      source_channel:
+        description: 渠道 (text/voice/image)
+        type: string
+      time:
+        description: 交易时间 (如 18:20:05)
+        type: string
+    type: object
+  ledger.Transaction:
+    properties:
+      account:
+        description: 支付/资产账户
+        type: string
+      amount:
+        description: 金额必填且必须 > 0
+        type: number
+      category:
+        description: 支出/收入科目
+        type: string
+      currency:
+        description: 货币 (默认 CNY)
+        type: string
+      date:
+        description: 交易日期 YYYY-MM-DD
+        type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/ledger.Metadata'
+        description: 扩展元数据
+      narration:
+        description: 详细备注 (上限 1000 字符，可为空)
+        maxLength: 1000
+        type: string
+      payee:
+        description: 商户名 (上限 500 字符)
+        maxLength: 500
+        type: string
+      tags:
+        description: 标签 (如 ["#公司报销"])
+        items:
+          type: string
+        type: array
+      type:
+        description: '交易类型: expense / income / refund'
+        type: string
+    required:
+    - amount
+    type: object
+info:
+  contact: {}
+paths:
+  /api/v1/transaction:
+    post:
+      consumes:
+      - application/json
+      description: 接收标准 JSON 账单数据，校验后追加写入本地 Beancount 纯文本账本
+      parameters:
+      - description: 记账人 ID (如 husband)
+        in: header
+        name: X-User-ID
+        type: string
+      - description: 渠道来源 (如 wecom_api_plugin)
+        in: header
+        name: X-Source-Channel
+        type: string
+      - description: 账单请求体
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ledger.BatchTransactions'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回
+          schema:
+            $ref: '#/definitions/handler.APIResponse'
+        "400":
+          description: 参数校验或保存失败
+          schema:
+            $ref: '#/definitions/handler.APIResponse'
+      summary: 通用记账 API 接口
+      tags:
+      - 账单管理
+swagger: "2.0"

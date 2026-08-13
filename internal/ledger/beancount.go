@@ -98,6 +98,11 @@ func (t *Transaction) Validate() error {
 
 // EnsureDefaults 极简降级兜底 (采用 Go 1.21+ cmp.Or 与 slices.Contains)
 func (t *Transaction) EnsureDefaults(ctx RequestContext) {
+	// ⭐️ 第一行强效防空指针：如果 Meta 是 nil，立刻给它初始化一个空的 &Metadata{} 结构体！
+	if t.Meta == nil {
+		t.Meta = &Metadata{}
+	}
+
 	// 1. 基础字段降级
 	t.Date = cmp.Or(t.Date, time.Now().Format("2006-01-02"))
 	t.Currency = cmp.Or(t.Currency, ctx.DefaultCurrency)
@@ -155,7 +160,7 @@ func (t *Transaction) ToBeancountFormat() string {
 	fmt.Fprintf(&builder, "%s * \"%s\"%s%s%s\n", t.Date, t.Payee, narrationPart, tagString, linkString)
 
 	// 3. 反射：自动遍历 Metadata 中的所有预设结构体字段
-	metaVal := reflect.ValueOf(t.Meta)
+	metaVal := reflect.ValueOf(*t.Meta)
 	metaType := reflect.TypeFor[Metadata]()
 
 	for i := 0; i < metaVal.NumField(); i++ {
@@ -229,6 +234,13 @@ func AppendBatchTransactions(basePath string, req BatchTransactions, ctx Request
 
 	// 4. 遍历年份 map，分别追加写入对应的 .bean 文件
 	for targetPath, builder := range yearlyTextMap {
+
+		// ⭐️ 自动创建父级文件夹 (例如 transactions/ 目录不存在时自动建好)
+		dir := filepath.Dir(targetPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("创建账本目录失败 [%s]: %w", dir, err)
+		}
+
 		file, err := os.OpenFile(targetPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return fmt.Errorf("打开/创建账单文件失败 [%s]: %w", targetPath, err)
