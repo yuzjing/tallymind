@@ -19,28 +19,45 @@ type Config struct {
 	APIKey           string
 	BaseURL          string
 	Model            string
-	MaxTokens        int
+	MaxTokens        int64
 	Temperature      float64
 	TopP             float64
 	FrequencyPenalty float64
 	PresencePenalty  float64
 }
 
-// openai 请求标准体
-type ChatCompletionRequest struct {
+// Attachment 通用媒体附件载体 (支持图片、文档、音频等)
+type Attachment struct {
+	Type     string `json:"type"`
+	URL      string `json:"url"`
+	MimeType string `json:"mime_type,omitempty"`
+}
+
+// openai 请求/响应标准体(多模态归一化)
+type ContentPart struct {
+	Type     string    `json:"type"`                // "text" 或 "image_url"
+	Value    string    `json:"text,omitempty"`      // 当 type="text"
+	ImageURL *ImageURL `json:"image_url,omitempty"` // 当 type="image_url"
+}
+
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"` // 支持 string 或 []ContentPart
+}
+
+type ChatRequest struct {
 	Model            string          `json:"model"`
 	Messages         []ChatMessage   `json:"messages"`
 	Temperature      float64         `json:"temperature,omitempty"`
 	TopP             float64         `json:"top_p,omitempty"`
 	FrequencyPenalty float64         `json:"frequency_penalty,omitempty"`
 	PresencePenalty  float64         `json:"presence_penalty,omitempty"`
-	MaxTokens        int             `json:"max_tokens,omitempty"`
+	MaxTokens        int64           `json:"max_tokens,omitempty"`
 	ResponseFormat   *ResponseFormat `json:"response_format,omitempty"`
-}
-
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
 }
 
 type ResponseFormat struct {
@@ -49,7 +66,10 @@ type ResponseFormat struct {
 
 type ChatCompletionResponse struct {
 	Choices []struct {
-		Message ChatMessage `json:"message"`
+		Message struct {
+			Role    string `json:"message"`
+			Content string `json:"content"`
+		} `json:"message"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -98,21 +118,46 @@ func NewClient(cfg Config) (*Client, error) {
 	}
 
 	return &Client{
+		cfg: cfg,
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second, // 20 秒超时控制
 		},
 	}, nil
 }
 
-func (c *Client) ParseTransaction(ctx context.Context, userText string) (*ledger.BatchTransactions, error) {
-	if strings.TrimSpace(userText) == "" {
-		return nil, fmt.Errorf("输入文本不能为空")
+func (c *Client) ParseTransaction(ctx context.Context, userText string, attachments ...Attachment) (*ledger.BatchTransactions, error) {
+	// 1. 组装多模态
+	var parts []ContentPart
+
+	promptText := "请仔细分析传入的信息，识别提取出所有的消费记账明细。"
+
+	if strings.TrimSpace(userText) != "" {
+		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", strings.TrimSpace(userText))
 	}
 
-	// 1. 组装请求 Payload (全参数自动打包)
-	reqPayload := ChatCompletionRequest{
-		Model:            c.cfg.Model,
-		Messages:         []ChatMessage{{Role: "system", Content: buildSystemPrompt()}, {Role: "user", Content: userText}},
+	parts = append(parts, ContentPart{Type: "text", Value: promptText})
+
+	// 追加媒体附件 (符合 OpenAI Vision 规范)
+	for _, att := range attachments {
+		if strings.TrimSpace(att.URL) == "" {
+			continue
+		}
+		switch att.Type {
+		case "image", "image_url":
+			parts = append(parts, ContentPart{
+				Type:  att.Type,
+				Value: att.URL,
+			})
+		}
+	}
+
+	// 2. 组装统一请求 Payload
+	reqPayload := ChatRequest{
+		Model: c.cfg.Model,
+		Messages: []ChatMessage{
+			{Role: "system", Content: buildSystemPrompt()},
+			{Role: "user", Content: parts},
+		},
 		Temperature:      c.cfg.Temperature,
 		TopP:             c.cfg.TopP,
 		FrequencyPenalty: c.cfg.FrequencyPenalty,
@@ -126,7 +171,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string) (*ledger
 		return nil, fmt.Errorf("构造 LLM 请求失败: %w", err)
 	}
 
-	// 2. 构造 HTTP POST 请求
+	// 3. 构造 HTTP POST 请求
 	apiURL := fmt.Sprintf("%s/chat/completions", c.cfg.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBytes))
 	if err != nil {
@@ -136,7 +181,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string) (*ledger
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.APIKey))
 
-	// 3. 发起网络请求
+	// 4. 发起http请求
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("调用 LLM API 网络异常: %w", err)
@@ -148,13 +193,13 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string) (*ledger
 		return nil, fmt.Errorf("读取 LLM 响应失败: %w", err)
 	}
 
-	// 4. 检查 HTTP 状态码
+	// 5. 检查 HTTP 状态码
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("LLM API 返回异常", "status", resp.StatusCode, "body", string(respBytes))
 		return nil, fmt.Errorf("LLM API 调用失败 (HTTP %d)", resp.StatusCode)
 	}
 
-	// 5. 解包 OpenAI 响应
+	// 6. 解包 OpenAI 响应
 	var chatResp ChatCompletionResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
 		return nil, fmt.Errorf("解析 LLM 响应 JSON 失败: %w", err)
@@ -168,11 +213,11 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string) (*ledger
 		return nil, fmt.Errorf("LLM API 未返回任何有效的 Choice 结果")
 	}
 
-	// 6. 提取 AI 吐出的 JSON 文本并清洗可能的 Markdown 杂质
+	// 7. 提取 AI 吐出的 JSON 文本并清洗可能的 Markdown 杂质
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	content = cleanMarkdownJSON(content)
 
-	// 7. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
+	// 8. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
 	var batch ledger.BatchTransactions
 	if err := json.Unmarshal([]byte(content), &batch); err != nil {
 		slog.Error("LLM 返回文本无法解析为 BatchTransactions", "raw_content", content, "err", err)

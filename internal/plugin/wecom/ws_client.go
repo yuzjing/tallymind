@@ -166,7 +166,7 @@ func (ws *WSClient) Start(ctx context.Context) {
 			slog.Debug("正在建立企微 WSS 长连接", "URL", wsURL)
 			err := ws.connectAndSubscribe(ctx, wsURL)
 			if err != nil {
-				slog.Debug("企微 WSS 长连接异常断开", "err", err, " 5 秒后自动尝试重连...")
+				slog.Debug("企微 WSS 长连接异常断开", "err", err)
 				time.Sleep(5 * time.Second)
 			}
 		}

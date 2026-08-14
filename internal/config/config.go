@@ -19,8 +19,9 @@ type AppConfig struct {
 	Port     string // 监听端口
 
 	// 1. 通道独立开关
-	EnableWeComWSS bool // 是否开启企微 WSS 长连接服务
-	EnableHTTPAPI  bool // 是否开启通用 HTTP API 接口
+	EnableWeComWSS  bool // 是否开启企微 WSS 长连接服务
+	EnableWeComHTTP bool // 是否开启企微自建应用 HTTP 回调与主动推送服务
+	EnableHTTPAPI   bool // 是否开启通用 HTTP API 接口
 
 	// 2. 核心 AI 开关
 	EnableLLM bool // 是否开启 AI 大模型自然语言解析
@@ -47,6 +48,14 @@ type LedgerConfig struct {
 
 // WeComConfig 企业微信配置
 type WeComConfig struct {
+	// 1. 企微自建应用 / 主动推送 / HTTP 回调凭证
+	CorpID         string // 企业 ID (corpid)
+	AgentID        int64  // 自建应用 ID (agentid)
+	Secret         string // 自建应用 Secret
+	Token          string // 消息回调 Token
+	EncodingAESKey string // 消息加解密 EncodingAESKey
+
+	// 2. 企微 API 模式机器人 (WSS 长连接专有)
 	BotID     string
 	BotSecret string
 }
@@ -71,8 +80,9 @@ func Load() *Config {
 			Port:     cmp.Or(os.Getenv("SERVER_PORT"), "8080"),
 
 			// 通道独立开关
-			EnableWeComWSS: getEnvBool("ENABLE_WECOM_WSS", false), // 默认开启 WSS 长连接
-			EnableHTTPAPI:  getEnvBool("ENABLE_HTTP_API", true),   // 默认开启 HTTP API
+			EnableWeComWSS:  getEnvBool("ENABLE_WECOM_WSS", false), // 默认开启 WSS 长连接
+			EnableWeComHTTP: getEnvBool("ENABLE_WECOM_HTTP", true),
+			EnableHTTPAPI:   getEnvBool("ENABLE_HTTP_API", true), // 默认开启 HTTP API
 
 			// AI 开关
 			EnableLLM: getEnvBool("ENABLE_LLM", false),
@@ -98,13 +108,20 @@ func Load() *Config {
 			APIKey:           os.Getenv("LLM_API_KEY"),
 			BaseURL:          os.Getenv("LLM_BASE_URL"),
 			Model:            os.Getenv("LLM_MODEL"),
-			MaxTokens:        getEnvInt("LLM_MAX_TOKENS", 4096),
+			MaxTokens:        getEnvInt64("LLM_MAX_TOKENS", 4096),
 			Temperature:      getEnvFloat("LLM_TEMPERATURE", 0.2),
 			TopP:             getEnvFloat("LLM_TOP_P", 0.0),
 			FrequencyPenalty: getEnvFloat("LLM_FREQUENCY_PENALTY", 0.0),
 			PresencePenalty:  getEnvFloat("LLM_PRESENCE_PENALTY", 0.0),
 		},
 		WeCom: WeComConfig{
+			CorpID:         os.Getenv("WECOM_CORP_ID"),
+			AgentID:        getEnvInt64("WECOM_AGENT_ID", 0),
+			Secret:         os.Getenv("WECOM_SECRET"),
+			Token:          os.Getenv("WECOM_TOKEN"),
+			EncodingAESKey: os.Getenv("WECOM_ENCODING_AES_KEY"),
+
+			// WSS 机器人凭证
 			BotID:     os.Getenv("WECOM_BOT_ID"),
 			BotSecret: os.Getenv("WECOM_BOT_SECRET"),
 		},
@@ -124,13 +141,13 @@ func getEnvBool(key string, defaultVal bool) bool {
 	return val
 }
 
-// 辅助函数 2：读取 int 类型环境变量
-func getEnvInt(key string, defaultVal int) int {
+// 辅助函数 2：读取 int64 类型环境变量
+func getEnvInt64(key string, defaultVal int64) int64 {
 	valStr := os.Getenv(key)
 	if valStr == "" {
 		return defaultVal
 	}
-	val, err := strconv.Atoi(valStr)
+	val, err := strconv.ParseInt(valStr, 10, 64)
 	if err != nil {
 		return defaultVal
 	}

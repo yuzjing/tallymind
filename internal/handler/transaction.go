@@ -4,6 +4,8 @@ package handler
 
 import (
 	"cmp"
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"tallymind/internal/config"
@@ -88,4 +90,26 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 			"details": req.Transactions, // 同时也把原生数组塞进 Data 里
 		},
 	})
+}
+
+func (h *TransactionHandler) SaveBatch(ctx context.Context, userID string, sourceChannel string, batch *ledger.BatchTransactions) (string, error) {
+	if batch == nil || len(batch.Transactions) == 0 {
+		return "", fmt.Errorf("交易批次为空，无需存盘")
+	}
+
+	// 存盘上下文在 transaction.go 内部组装
+	reqCtx := ledger.RequestContext{
+		UserID:           userID,
+		Reporter:         userID,
+		SourceChannel:    sourceChannel,
+		DefaultCurrency:  h.cfg.DefaultCurrency,
+		FallbackCategory: h.cfg.FallbackCategory,
+		FallbackAccount:  h.cfg.FallbackAccount,
+	}
+
+	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, *batch, reqCtx); err != nil {
+		return "", fmt.Errorf("保存交易批次失败: %w", err)
+	}
+
+	return batch.ToSummaryString(), nil
 }
