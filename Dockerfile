@@ -27,6 +27,8 @@ WORKDIR /app
 # 从第一阶段仅复制编译好的静态二进制文件
 COPY --from=builder /build/tallymind .
 
+COPY templates ./templates
+
 # 暴露端口
 EXPOSE 8080
 
