@@ -83,7 +83,6 @@ func main() {
 
 		r := gin.Default()
 		txHandler := handler.NewTransactionHandler(cfg.Ledger)
-		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 		if cfg.App.Env != "production" || cfg.App.Debug {
 			r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
