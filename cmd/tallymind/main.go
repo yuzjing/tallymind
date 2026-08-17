@@ -86,8 +86,6 @@ func main() {
 		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
 		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
-		// 企微可信域名验证文件托管 (取消注释并替换为你下载的真实文件名)
-		r.StaticFile("/WW_verify_12345678.txt", "./WW_verify_12345678.txt")
 
 		// 协程启动 Gin HTTP 服务
 		go func() {
