@@ -7,19 +7,24 @@ import (
 	"log/slog"
 	"tallymind/internal/handler"
 	"tallymind/internal/llm"
+	"tallymind/internal/template"
 )
 
 type WeComHandler struct {
-	txHandler *handler.TransactionHandler
-	llmClient *llm.Client
-	client    *Client
+	txHandler   *handler.TransactionHandler
+	llmClient   *llm.Client
+	client      *Client
+	templateDir string
+	publicURL   string
 }
 
-func NewWeComHandler(txHandler *handler.TransactionHandler, llmClient *llm.Client, client *Client) *WeComHandler {
+func NewWeComHandler(txHandler *handler.TransactionHandler, llmClient *llm.Client, client *Client, templateDir string, publicURL string) *WeComHandler {
 	return &WeComHandler{
-		txHandler: txHandler,
-		llmClient: llmClient,
-		client:    client,
+		txHandler:   txHandler,
+		llmClient:   llmClient,
+		client:      client,
+		templateDir: templateDir,
+		publicURL:   publicURL,
 	}
 }
 
@@ -66,23 +71,26 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 		_ = h.client.SendMessage(ctx, NewMarkdownMessage(userID, "❌ **账单保存失败**\n> "+err.Error()))
 		return
 	}
-	// C. 推送企微卡片
-	h.sendSuccessCard(ctx, userID, summary)
-}
+	//4.组装数据，通过外部 YAML 模板渲染出 MessageRequest！
 
-func (h *WeComHandler) sendSuccessCard(ctx context.Context, userID string, summary string) {
-	card := &TemplateCardContent{
-		CardType: "text_notice",
+	data := map[string]any{
+		"Title":    "✅ 记账成功",
+		"Summary":  summary,
+		"JumpURL":  h.publicURL,
+		"ImageURL": msg.PicURL,
 	}
-	card.MainTitle.Title = "✅ **记账成功**\n> "
-	card.MainTitle.Desc = summary
 
-	card.CardAction.Type = "1"
-	card.CardAction.URL = ""
-
-	if err := h.client.SendMessage(ctx, NewTemplateCardMessage(userID, card)); err != nil {
-		slog.ErrorContext(ctx, "[WeCom] 推送卡片失败", "userID", userID, "err", err)
-	} else {
-		slog.InfoContext(ctx, "[WeCom] 推送卡片成功", "userID", userID)
+	cardMsg, err := template.Render[MessageRequest](h.templateDir, "wecom/expense_success.yaml", data)
+	if err != nil {
+		slog.ErrorContext(ctx, "[WeCom] 渲染模板失败", "err", err)
+		return
 	}
+	// 5. 补上接收人并发送
+	cardMsg.ToUser = userID
+	if err := h.client.SendMessage(ctx, cardMsg); err != nil {
+		slog.ErrorContext(ctx, "[WeCom] 发送消息失败", "userID", userID, "err", err)
+		return
+	}
+	slog.InfoContext(ctx, "[WeCom] 发送消息成功", "userID", userID)
+
 }

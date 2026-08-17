@@ -221,7 +221,7 @@ func (c *Client) SendMessage(ctx context.Context, msg *MessageRequest) error {
 }
 
 // Push 隐式实现 internal/notifier/notifier.go 的 Notifier 接口
-func (c *Client) Push(ctx context.Context, msg *notifier.Message) error {
+func (c *Client) Push(ctx context.Context, msg notifier.Message) error {
 	toUser := msg.Target
 	if toUser == "" {
 		return fmt.Errorf("target user is empty")

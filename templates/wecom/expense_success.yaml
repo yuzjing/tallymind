@@ -1,0 +1,14 @@
+msgtype: "template_card"
+template_card:
+  card_type: "{{ if .ImageURL }}news_notice{{ else }}text_notice{{ end }}"
+  main_title:
+    title: "{{ if .Title }}{{ .Title }}{{ else }}✅ 记账成功{{ end }}"
+    desc: "{{ .Summary }}"
+  card_action:
+    type: "1"
+    url: "{{ .JumpURL }}"
+  {{ if .ImageURL }}
+  card_image:
+    url: "{{ .ImageURL }}"
+    aspect_ratio: 1.3
+  {{ end }}

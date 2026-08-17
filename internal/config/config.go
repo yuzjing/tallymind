@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 
@@ -31,9 +32,13 @@ type AppConfig struct {
 	GitBackupCron   string // 备份定时表达式，默认每 6 小时 "0 */6 * * *"
 
 	// 4. 定时报表与任务配置
-	EnableReporter    bool   // 是否开启定时报表推送总开关
-	WeeklyReportCron  string // 周报表达式，默认每周日 20:00 "0 20 * * 0"
-	MonthlyReportCron string // 月报表达式，默认每月1日 09:00 "0 9 1 * *"
+	EnableReporter bool // 是否开启定时报表推送总开关
+	ReportChannels []string
+	AlertChannels  []string
+
+	//5. 消息模板
+	TemplateDir string // 模板目录路径
+	PublicURL   string // 应用基础 URL
 }
 
 // LedgerConfig 账本配置
@@ -92,9 +97,12 @@ func Load() *Config {
 			GitBackupCron:   cmp.Or(os.Getenv("GIT_BACKUP_CRON"), "0 */6 * * *"),
 
 			// 定时报表开关与 Cron
-			EnableReporter:    getEnvBool("ENABLE_REPORTER", false),
-			WeeklyReportCron:  cmp.Or(os.Getenv("WEEKLY_REPORT_CRON"), "0 20 * * 0"),
-			MonthlyReportCron: cmp.Or(os.Getenv("MONTHLY_REPORT_CRON"), "0 9 1 * *"),
+			EnableReporter: getEnvBool("ENABLE_REPORTER", false),
+			ReportChannels: getEnvStringSlice("REPORTER_CHANNELS", []string{}),
+			AlertChannels:  getEnvStringSlice("ALERT_CHANNELS", []string{}),
+
+			TemplateDir: cmp.Or(os.Getenv("TEMPLATE_DIR"), "templates"),
+			PublicURL:   cmp.Or(os.Getenv("PUBLIC_URL"), "http://localhost:8080"),
 		},
 		Ledger: LedgerConfig{
 			FilePath:         os.Getenv("BEANCOUNT_FILE_PATH"),
@@ -165,4 +173,22 @@ func getEnvFloat(key string, defaultVal float64) float64 {
 		return defaultVal
 	}
 	return val
+}
+
+// 辅助函数：从环境变量读取逗号分隔的字符串切片
+func getEnvStringSlice(key string, defaultVals []string) []string {
+	valStr := os.Getenv(key)
+	if strings.TrimSpace(valStr) == "" {
+		return defaultVals
+	}
+
+	parts := strings.Split(valStr, ",")
+	res := make([]string, 0, len(parts))
+	for _, p := range parts {
+		name := strings.TrimSpace(strings.ToLower(p))
+		if name != "" {
+			res = append(res, name)
+		}
+	}
+	return res
 }

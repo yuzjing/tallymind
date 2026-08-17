@@ -21,6 +21,7 @@ import (
 	"tallymind/internal/config"
 	"tallymind/internal/handler"
 	"tallymind/internal/llm"
+	"tallymind/internal/notifier"
 	"tallymind/internal/plugin/wecom"
 )
 
@@ -94,11 +95,13 @@ func main() {
 		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
 		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
 		if cfg.App.EnableWeComHTTP {
-			slog.Info("正在加载企业微信 HTTP 回调插件...")
+			notifierMgr := notifier.NewManager()
 			wecomClient := wecom.NewClient(&cfg.WeCom)
-			wecomHandler := wecom.NewWeComHandler(txHandler, llmClient, wecomClient)
+			notifierMgr.Register("wecom", wecomClient)
+			wecomHandler := wecom.NewWeComHandler(txHandler, llmClient, wecomClient, cfg.App.TemplateDir, cfg.App.PublicURL)
 			callbackHandler := wecom.NewCallbackHandler(&cfg.WeCom, wecomHandler)
 			callbackHandler.RegisterRoutes(r)
+			slog.Info("已加载企业微信 HTTP 回调插件")
 		}
 		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
 
