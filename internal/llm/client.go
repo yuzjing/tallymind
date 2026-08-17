@@ -224,6 +224,8 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		return nil, fmt.Errorf("AI 提取的数据无法转为合规账单: %w", err)
 	}
 
+	slog.Debug("LLM 提取结果", "content", content, "json", batch)
+
 	return &batch, nil
 }
 

@@ -144,7 +144,7 @@ func (c *Client) GetAccessToken(ctx context.Context) (string, error) {
 
 	params := url.Values{}
 	params.Set("corpid", c.cfg.CorpID)
-	params.Set("secret", c.cfg.Secret)
+	params.Set("corpsecret", c.cfg.Secret)
 
 	requestURL := "https://qyapi.weixin.qq.com/cgi-bin/gettoken?" + params.Encode()
 
