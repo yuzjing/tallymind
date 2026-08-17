@@ -7,7 +7,7 @@ WORKDIR /build
 
 # 1. 利用 Docker 缓存机制，优先下载依赖
 COPY go.mod go.sum ./
-RUN go env -w GOPROXY=https://goproxy.cn,direct && go mod download
+# RUN go env -w GOPROXY=https://goproxy.cn,direct && go mod download
 
 # 2. 复制源码并编译为无依赖静态二进制文件
 COPY . .

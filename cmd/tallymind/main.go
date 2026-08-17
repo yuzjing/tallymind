@@ -97,7 +97,7 @@ func main() {
 		if cfg.App.EnableWeComHTTP {
 			slog.Info("正在加载企业微信 HTTP 回调插件...")
 			wecomClient := wecom.NewClient(&cfg.WeCom)
-			wecomHandler := wecom.NewWeComHandler(llmClient, txHandler, wecomClient)
+			wecomHandler := wecom.NewWeComHandler(txHandler, llmClient, wecomClient)
 			callbackHandler := wecom.NewCallbackHandler(&cfg.WeCom, wecomHandler)
 			callbackHandler.RegisterRoutes(r)
 		}
