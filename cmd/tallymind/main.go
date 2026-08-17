@@ -84,7 +84,23 @@ func main() {
 		r := gin.Default()
 		txHandler := handler.NewTransactionHandler(cfg.Ledger)
 		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+		if cfg.App.Env != "production" || cfg.App.Debug {
+			r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+			slog.Info("📖 Swagger API 文档已开启", "path", "/swagger/index.html")
+		} else {
+			slog.Info("🔒 生产环境 (production) 已安全禁用 Swagger API 文档")
+		}
+
 		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
+		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
+		if cfg.App.EnableWeComHTTP {
+			slog.Info("正在加载企业微信 HTTP 回调插件...")
+			wecomClient := wecom.NewClient(&cfg.WeCom)
+			wecomHandler := wecom.NewWeComHandler(llmClient, txHandler, wecomClient)
+			callbackHandler := wecom.NewCallbackHandler(&cfg.WeCom, wecomHandler)
+			callbackHandler.RegisterRoutes(r)
+		}
 		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
 
 		// 协程启动 Gin HTTP 服务
