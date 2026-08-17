@@ -50,7 +50,7 @@ func NewCallbackHandler(cfg *config.WeComConfig, wecomHandler *WeComHandler) *Ca
 
 // RegisterRoutes 注册企微回调路由到 Gin 引擎上
 func (h *CallbackHandler) RegisterRoutes(r *gin.Engine) {
-	group := r.Group("/wecom/callback")
+	group := r.Group("/wecom")
 	{
 		group.GET("/callback", h.VerifyURL)
 		group.POST("/callback", h.ReceiveMessage)
