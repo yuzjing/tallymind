@@ -1,12 +1,3 @@
-这是业界最主流的标准做法（主文件默认为英文 `README.md`，顶部放跳转链接进入 `README_zh.md`，两份文件各自保持纯粹、干净）。
-
-你可以直接创建两个文件：
-
----
-
-### 文件一：`README.md`（主页面 · 英文版）
-
-```markdown
 # 🌿 TallyMind
 
 <p align="left">
