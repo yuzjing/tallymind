@@ -18,10 +18,11 @@ type WeComHandler struct {
 	templateDir     string
 	publicURL       string
 	successTemplate string
+	failureTemplate string
 }
 
 func NewWeComHandler(
-	txHandler *handler.TransactionHandler, llmClient *llm.Client, client *Client, templateDir string, publicURL string, successTemplate string) *WeComHandler {
+	txHandler *handler.TransactionHandler, llmClient *llm.Client, client *Client, templateDir, publicURL, successTemplate, failureTemplate string) *WeComHandler {
 	return &WeComHandler{
 		txHandler:       txHandler,
 		llmClient:       llmClient,
@@ -29,6 +30,7 @@ func NewWeComHandler(
 		templateDir:     templateDir,
 		publicURL:       publicURL,
 		successTemplate: successTemplate,
+		failureTemplate: failureTemplate,
 	}
 }
 
@@ -78,7 +80,7 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 	//4.组装数据，通过外部 YAML 模板渲染出 MessageRequest！
 
 	data := map[string]any{
-		"Title":    "✅ 记账成功",
+		"Title":    "记账成功",
 		"Summary":  summary,
 		"JumpURL":  h.publicURL,
 		"ImageURL": msg.PicURL,
@@ -87,7 +89,7 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 
 	cardMsg, err := template.Render[MessageRequest](h.templateDir, h.successTemplate, data)
 	if err != nil {
-		slog.ErrorContext(ctx, "[WeCom] 渲染模板失败", "err", err)
+		slog.ErrorContext(ctx, "[WeCom] 渲染程工模板失败", "err", err)
 		return
 	}
 

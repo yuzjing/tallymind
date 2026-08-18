@@ -98,7 +98,7 @@ func main() {
 			notifierMgr := notifier.NewManager()
 			wecomClient := wecom.NewClient(&cfg.WeCom)
 			notifierMgr.Register("wecom", wecomClient)
-			wecomHandler := wecom.NewWeComHandler(txHandler, llmClient, wecomClient, cfg.App.TemplateDir, cfg.App.PublicURL, cfg.WeCom.SuccessTemplate)
+			wecomHandler := wecom.NewWeComHandler(txHandler, llmClient, wecomClient, cfg.App.TemplateDir, cfg.App.PublicURL, cfg.WeCom.SuccessTemplate, cfg.WeCom.FailureTemplate)
 			callbackHandler := wecom.NewCallbackHandler(&cfg.WeCom, wecomHandler)
 			callbackHandler.RegisterRoutes(r)
 			slog.Info("已加载企业微信 HTTP 回调插件")

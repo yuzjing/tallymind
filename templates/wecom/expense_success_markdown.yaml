@@ -1,0 +1,3 @@
+msgtype: "markdown"
+markdown:
+  content: {{"### ✅ 记账成功\n> 账单已实时记入本地 Beancount 账本\n\n%s\n\n[📊 点击查看完整数据看板](%s)" .Summary .JumpURL | quote }}

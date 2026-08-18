@@ -54,33 +54,6 @@ type MsgCallbackBody struct {
 	} `json:"text"`
 }
 
-//3.回复消息body
-
-type RespondMsgBody struct {
-	MsgType      string          `json:"msgtype"`
-	Text         *TextContent    `json:"text,omitempty"`
-	Markdown     *TextContent    `json:"markdown,omitempty"`
-	Image        *MediaContent   `json:"image,omitempty"`
-	Voice        *MediaContent   `json:"voice,omitempty"`
-	Video        *VideoContent   `json:"video,omitempty"`
-	File         *MediaContent   `json:"file,omitempty"`
-	TemplateCard json.RawMessage `json:"template_card,omitempty"`
-}
-
-type TextContent struct {
-	Content string `json:"content"`
-}
-
-type MediaContent struct {
-	MediaID string `json:"media_id"` // 企微素材库 MediaID
-}
-
-type VideoContent struct {
-	MediaID     string `json:"media_id"`
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-}
-
 type WSClient struct {
 	wecomCfg  config.WeComConfig
 	ledgerCfg config.LedgerConfig
@@ -90,43 +63,35 @@ type WSClient struct {
 }
 
 // buildWeComRespondBody 将通用的 notifier.Message 转为企微官方数据体
-func buildWeComRespondBody(msg notifier.Message) RespondMsgBody {
+func buildWeComRespondBody(msg notifier.Message) *MessageRequest {
 	switch msg.Type {
 	case notifier.TypeImage:
-		return RespondMsgBody{
+		return &MessageRequest{
 			MsgType: "image",
 			Image:   &MediaContent{MediaID: msg.FilePath}, // 企微上传素材后的 MediaID 或路径
 		}
 
 	case notifier.TypeVideo:
-		return RespondMsgBody{
+		return &MessageRequest{
 			MsgType: "video",
 			Video:   &VideoContent{MediaID: msg.FilePath, Title: "账单视频"},
 		}
 
 	case notifier.TypeDocument:
-		return RespondMsgBody{
+		return &MessageRequest{
 			MsgType: "file",
 			File:    &MediaContent{MediaID: msg.FilePath},
 		}
 
 	case notifier.TypeJSON:
 		// 如果传的是卡片，将 msg.Data (any) 转为 raw JSON
-		var rawCard json.RawMessage
-		if msg.Data != nil {
-			bytes, _ := json.Marshal(msg.Data)
-			rawCard = json.RawMessage(bytes)
+		if card, ok := msg.Data.(*TemplateCardContent); ok {
+			return NewTemplateCardMessage("", card)
 		}
-		return RespondMsgBody{
-			MsgType:      "template_card",
-			TemplateCard: rawCard,
-		}
+		return NewTextMessage("", fmt.Sprintf("收到数据: %v", msg.Data))
 
-	default: // 默认当 Markdown 发送 (排版最美观)
-		return RespondMsgBody{
-			MsgType:  "markdown",
-			Markdown: &TextContent{Content: msg.Content},
-		}
+	default: // 默认当 Text 发送
+		return NewTextMessage("", msg.Content)
 	}
 }
 

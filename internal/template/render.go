@@ -44,7 +44,7 @@ func Render[T any](templateDir, templateRelativePath string, data any) (*T, erro
 
 	var rawObj any
 	if err := yaml.Unmarshal(buf.Bytes(), &rawObj); err != nil {
-		return nil, fmt.Errorf("unmarshal yaml [%s] failed: %w", fullPath, err)
+		return nil, fmt.Errorf("unmarshal yaml failed: %w\n--- RAW OUTPUT ---\n%s\n------------------", err, buf.String())
 	}
 	jsonBytes, err := json.Marshal(rawObj)
 	if err != nil {

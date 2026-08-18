@@ -1,0 +1,3 @@
+msgtype: "text"
+markdown:
+  content: {{.Title .Summary .JumpURL | quote }}

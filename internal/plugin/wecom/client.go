@@ -33,85 +33,6 @@ type WecomTokenResponse struct {
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
-type MessageRequest struct {
-	ToUser                   string               `json:"touser,omitempty"`                     // 接收者，多个接收者用逗号分隔
-	ToParty                  string               `json:"toparty,omitempty"`                    // 接收者，多个接收者用逗号分隔
-	ToTag                    string               `json:"totag,omitempty"`                      // 接收者，多个接收者用逗号分隔
-	MsgType                  string               `json:"msgtype"`                              // 消息类型
-	AgentID                  int64                `json:"agentid"`                              // 自建应用 ID
-	EnableDuplicationCheck   bool                 `json:"enable_duplication_check,omitempty"`   // 是否开启重复消息检查
-	DuplicationCheckInterval int                  `json:"duplication_check_interval,omitempty"` // 重复消息检查间隔，单位秒
-	Markdown                 *MarkdownContent     `json:"markdown,omitempty"`                   // Markdown 消息内容
-	TemplateCard             *TemplateCardContent `json:"template_card,omitempty"`              // 模板卡片消息内容
-}
-
-type MarkdownContent struct {
-	Content string `json:"content"` // Markdown 内容
-}
-
-type TemplateCardContent struct {
-	// ==================== 1. 公用基础字段 ====================
-	CardType string `json:"card_type"` // "text_notice" 或 "news_notice"
-
-	// 主标题信息 (两种卡片均支持 title 和 desc)
-	MainTitle struct {
-		Title string `json:"title"`          // 一级标题
-		Desc  string `json:"desc,omitempty"` // 标题辅助信息/描述
-	} `json:"main_title"`
-
-	// 卡片底部跳转行为 (两种卡片均必填)
-	CardAction struct {
-		Type string `json:"type"` // 1: 跳转 URL, 2: 打开小程序
-		URL  string `json:"url,omitempty"`
-	} `json:"card_action"`
-
-	// ==================== 2. 文本通知型 (text_notice) 专属字段 ====================
-
-	// 仅 text_notice 支持：二级副标题
-	SubTitleText string `json:"sub_title_text,omitempty"`
-
-	// 仅 text_notice 支持：关键数据突显 (如大号字体显示 "￥500.00")
-	EmphasisContent *struct {
-		Title string `json:"title"`          // 突显数值
-		Desc  string `json:"desc,omitempty"` // 数值描述
-	} `json:"emphasis_content,omitempty"`
-
-	// 仅 text_notice 支持：左右键值对列表 (如 "分类: 餐饮")
-	HorizontalContentList []struct {
-		KeyName string `json:"keyname"`
-		Value   string `json:"value"`
-	} `json:"horizontal_content_list,omitempty"`
-
-	// ==================== 3. 图文展示型 (news_notice) 专属字段 ====================
-
-	// 仅 news_notice 支持：顶部大图 (CardImage 和 ImageTextArea 必须二选一填一个)
-	CardImage *struct {
-		URL         string  `json:"url"`                    // 图片 URL
-		AspectRatio float64 `json:"aspect_ratio,omitempty"` // 宽高比，默认 1.3
-	} `json:"card_image,omitempty"`
-
-	// 仅 news_notice 支持：左图右文摘要区
-	ImageTextArea *struct {
-		Type  int    `json:"type,omitempty"`  // 1: 跳转 URL
-		URL   string `json:"url,omitempty"`   // 跳转地址
-		Title string `json:"title,omitempty"` // 标题
-		Desc  string `json:"desc,omitempty"`  // 描述
-	} `json:"image_text_area,omitempty"`
-
-	// 仅 news_notice 支持：卡片下方垂直列表项 (如文章/明细推荐)
-	VerticalContentList []struct {
-		Title string `json:"title"`          // 列表标题
-		Desc  string `json:"desc,omitempty"` // 列表描述
-	} `json:"vertical_content_list,omitempty"`
-
-	// 仅 news_notice 支持：底部多链接跳转列表 (最多 3 个)
-	JumpList []struct {
-		Type  int    `json:"type"`  // 1: 跳转 URL
-		Title string `json:"title"` // 链接文案
-		URL   string `json:"url"`   // 链接地址
-	} `json:"jump_list,omitempty"`
-}
-
 func NewClient(cfg *config.WeComConfig) *Client {
 	return &Client{
 		cfg: cfg,
@@ -229,7 +150,7 @@ func (c *Client) Push(ctx context.Context, msg notifier.Message) error {
 
 	switch msg.Type {
 	case notifier.TypeText:
-		return c.SendMessage(ctx, NewMarkdownMessage(toUser, msg.Content))
+		return c.SendMessage(ctx, NewTextMessage(toUser, msg.Content))
 	case notifier.TypeJSON:
 		if card, ok := msg.Data.(*TemplateCardContent); ok {
 			return c.SendMessage(ctx, NewTemplateCardMessage(toUser, card))
@@ -238,24 +159,6 @@ func (c *Client) Push(ctx context.Context, msg notifier.Message) error {
 
 	default:
 		slog.WarnContext(ctx, "[WeCom] 收到暂未显式适配的消息类型，降级处理", "type", msg.Type)
-		return c.SendMessage(ctx, NewMarkdownMessage(toUser, fmt.Sprintf("收到 [%s] 消息:\n%s", msg.Type, msg.Content)))
-	}
-}
-
-func NewMarkdownMessage(toUser string, content string) *MessageRequest {
-	return &MessageRequest{
-		ToUser:  toUser,
-		MsgType: "markdown",
-		Markdown: &MarkdownContent{
-			Content: content,
-		},
-	}
-}
-
-func NewTemplateCardMessage(toUser string, card *TemplateCardContent) *MessageRequest {
-	return &MessageRequest{
-		ToUser:       toUser,
-		MsgType:      "template_card",
-		TemplateCard: card,
+		return c.SendMessage(ctx, NewTextMessage(toUser, fmt.Sprintf("收到 [%s] 消息:\n%s", msg.Type, msg.Content)))
 	}
 }
