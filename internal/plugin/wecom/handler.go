@@ -3,6 +3,7 @@ package wecom
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"tallymind/internal/handler"
@@ -11,20 +12,23 @@ import (
 )
 
 type WeComHandler struct {
-	txHandler   *handler.TransactionHandler
-	llmClient   *llm.Client
-	client      *Client
-	templateDir string
-	publicURL   string
+	txHandler       *handler.TransactionHandler
+	llmClient       *llm.Client
+	client          *Client
+	templateDir     string
+	publicURL       string
+	successTemplate string
 }
 
-func NewWeComHandler(txHandler *handler.TransactionHandler, llmClient *llm.Client, client *Client, templateDir string, publicURL string) *WeComHandler {
+func NewWeComHandler(
+	txHandler *handler.TransactionHandler, llmClient *llm.Client, client *Client, templateDir string, publicURL string, successTemplate string) *WeComHandler {
 	return &WeComHandler{
-		txHandler:   txHandler,
-		llmClient:   llmClient,
-		client:      client,
-		templateDir: templateDir,
-		publicURL:   publicURL,
+		txHandler:       txHandler,
+		llmClient:       llmClient,
+		client:          client,
+		templateDir:     templateDir,
+		publicURL:       publicURL,
+		successTemplate: successTemplate,
 	}
 }
 
@@ -79,12 +83,19 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 		"JumpURL":  h.publicURL,
 		"ImageURL": msg.PicURL,
 	}
+	slog.DebugContext(ctx, "Msg", "data", data)
 
-	cardMsg, err := template.Render[MessageRequest](h.templateDir, "wecom/expense_success.yaml", data)
+	cardMsg, err := template.Render[MessageRequest](h.templateDir, h.successTemplate, data)
 	if err != nil {
 		slog.ErrorContext(ctx, "[WeCom] 渲染模板失败", "err", err)
 		return
 	}
+
+	//可删区域，debug用
+
+	jsonBytes, _ := json.Marshal(cardMsg)
+	slog.InfoContext(ctx, "👉 最终发给企微的完整请求体", "payload", string(jsonBytes))
+
 	// 5. 补上接收人并发送
 	cardMsg.ToUser = userID
 	if err := h.client.SendMessage(ctx, cardMsg); err != nil {

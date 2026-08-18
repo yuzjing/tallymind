@@ -1,0 +1,7 @@
+msgtype: "news"
+news:
+  articles:
+    - title: "{{ if .Title }}{{ .Title }}{{ else }}✅ 记账成功{{ end }}"
+      description: "{{ .Summary }}"
+      url: "{{ .JumpURL }}"
+      picurl: "{{ if .ImageURL }}{{ .ImageURL }}{{ else }}https://tallymind.528900.xyz/banner.png{{ end }}"

@@ -1,0 +1,9 @@
+msgtype: "markdown"
+markdown:
+  content: |
+    ### ✅ 记账成功
+    > 账单已实时记入本地 Beancount 账本
+    
+    {{ .Summary }}
+    
+    [📊 点击查看完整数据看板]({{ .JumpURL }})

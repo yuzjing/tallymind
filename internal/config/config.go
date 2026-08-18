@@ -61,8 +61,9 @@ type WeComConfig struct {
 	EncodingAESKey string // 消息加解密 EncodingAESKey
 
 	// 2. 企微 API 模式机器人 (WSS 长连接专有)
-	BotID     string
-	BotSecret string
+	BotID           string
+	BotSecret       string
+	SuccessTemplate string
 }
 
 // Config 全局顶层配置结构体 (模块化子结构体设计)
@@ -123,11 +124,12 @@ func Load() *Config {
 			PresencePenalty:  getEnvFloat("LLM_PRESENCE_PENALTY", 0.0),
 		},
 		WeCom: WeComConfig{
-			CorpID:         os.Getenv("WECOM_CORP_ID"),
-			AgentID:        getEnvInt64("WECOM_AGENT_ID", 0),
-			Secret:         os.Getenv("WECOM_SECRET"),
-			Token:          os.Getenv("WECOM_TOKEN"),
-			EncodingAESKey: os.Getenv("WECOM_ENCODING_AES_KEY"),
+			CorpID:          os.Getenv("WECOM_CORP_ID"),
+			AgentID:         getEnvInt64("WECOM_AGENT_ID", 0),
+			Secret:          os.Getenv("WECOM_SECRET"),
+			Token:           os.Getenv("WECOM_TOKEN"),
+			EncodingAESKey:  os.Getenv("WECOM_ENCODING_AES_KEY"),
+			SuccessTemplate: os.Getenv("WECOM_SUCCESS_TEMPLATE"),
 
 			// WSS 机器人凭证
 			BotID:     os.Getenv("WECOM_BOT_ID"),

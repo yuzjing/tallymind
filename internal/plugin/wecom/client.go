@@ -34,15 +34,15 @@ type WecomTokenResponse struct {
 }
 
 type MessageRequest struct {
-	ToUser                   string               `json:"touser"`                     // 接收者，多个接收者用逗号分隔
-	ToParty                  string               `json:"toparty"`                    // 接收者，多个接收者用逗号分隔
-	ToTag                    string               `json:"totag"`                      // 接收者，多个接收者用逗号分隔
-	MsgType                  string               `json:"msgtype"`                    // 消息类型
-	AgentID                  int64                `json:"agentid"`                    // 自建应用 ID
-	EnableDuplicationCheck   bool                 `json:"enable_duplication_check"`   // 是否开启重复消息检查
-	DuplicationCheckInterval int                  `json:"duplication_check_interval"` // 重复消息检查间隔，单位秒
-	Markdown                 *MarkdownContent     `json:"markdown,omitempty"`         // Markdown 消息内容
-	TemplateCard             *TemplateCardContent `json:"template_card,omitempty"`    // 模板卡片消息内容
+	ToUser                   string               `json:"touser,omitempty"`                     // 接收者，多个接收者用逗号分隔
+	ToParty                  string               `json:"toparty,omitempty"`                    // 接收者，多个接收者用逗号分隔
+	ToTag                    string               `json:"totag,omitempty"`                      // 接收者，多个接收者用逗号分隔
+	MsgType                  string               `json:"msgtype"`                              // 消息类型
+	AgentID                  int64                `json:"agentid"`                              // 自建应用 ID
+	EnableDuplicationCheck   bool                 `json:"enable_duplication_check,omitempty"`   // 是否开启重复消息检查
+	DuplicationCheckInterval int                  `json:"duplication_check_interval,omitempty"` // 重复消息检查间隔，单位秒
+	Markdown                 *MarkdownContent     `json:"markdown,omitempty"`                   // Markdown 消息内容
+	TemplateCard             *TemplateCardContent `json:"template_card,omitempty"`              // 模板卡片消息内容
 }
 
 type MarkdownContent struct {
