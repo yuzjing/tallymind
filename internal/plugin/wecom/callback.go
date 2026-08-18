@@ -27,7 +27,8 @@ type PlainXMLMsg struct {
 	CreateTime   int64    `xml:"CreateTime"`
 	MsgType      string   `xml:"MsgType"`
 	Content      string   `xml:"Content"`
-	PicURL       string   `xml:"PicURL"`
+	PicURL       string   `xml:"PicUrl"`
+	MediaID      string   `xml:"MediaId"`
 	MsgID        string   `xml:"MsgID"`
 	AgentID      string   `xml:"AgentID"`
 }

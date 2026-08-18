@@ -54,7 +54,7 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 		})
 	default:
 		slog.WarnContext(ctx, "[WeCom] 收到暂不支持的消息类型", "userID", userID, "msgType", msg.MsgType)
-		_ = h.client.SendMessage(ctx, NewMarkdownMessage(userID, fmt.Sprintf("⚠️ 暂不支持 [%s] 类型消息记账", msg.MsgType)))
+		_ = h.client.SendMessage(ctx, NewTextMessage(userID, fmt.Sprintf("⚠️ 暂不支持 [%s] 类型消息记账", msg.MsgType)))
 		return
 	}
 
@@ -62,19 +62,19 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 	batch, err := h.llmClient.ParseTransaction(ctx, userText, attachments...)
 	if err != nil {
 		slog.ErrorContext(ctx, "[WeCom] LLM 解析失败", "userID", userID, "err", err)
-		_ = h.client.SendMessage(ctx, NewMarkdownMessage(userID, "❌ **记账识别失败**\n> "+err.Error()))
+		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "❌ **记账识别失败**\n> "+err.Error()))
 		return
 	}
 	if batch == nil || len(batch.Transactions) == 0 {
 		slog.WarnContext(ctx, "[WeCom] 消息中未识别出有效交易", "userID", userID)
-		_ = h.client.SendMessage(ctx, NewMarkdownMessage(userID, "⚠️ **未识别出有效账单**\n> 请输入具体的消费信息或清晰的小票截图。"))
+		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "⚠️ **未识别出有效账单**\n> 请输入具体的消费信息或清晰的小票截图。"))
 		return
 	}
 	// 3. 调 transaction 包存盘，拿到摘要
 	summary, err := h.txHandler.SaveBatch(ctx, userID, "wecom_plugin", batch)
 	if err != nil {
 		slog.ErrorContext(ctx, "[WeCom] 账单存盘失败", "userID", userID, "err", err)
-		_ = h.client.SendMessage(ctx, NewMarkdownMessage(userID, "❌ **账单保存失败**\n> "+err.Error()))
+		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "❌ **账单保存失败**\n> "+err.Error()))
 		return
 	}
 	//4.组装数据，通过外部 YAML 模板渲染出 MessageRequest！
