@@ -6,7 +6,7 @@
 
 > 基于 Go 语言开发的高性能多模态智能记账服务。支持发送**自然语言、多笔短语或账单小票截图**，由大模型智能提取并自动写入本地 [Beancount](https://beancount.github.io/) 纯文本复式记账账本。
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/yuzjing/tallymind)](https://goreportcard.com/report/github.com/yuzjing/tallymind)
+
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Container Image](https://img.shields.io/badge/GHCR-tallymind-blue?logo=docker)](https://github.com/yuzjing/tallymind/pkgs/container/tallymind)

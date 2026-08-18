@@ -6,7 +6,7 @@
 
 > An automated, multimodal double-entry bookkeeping agent written in Go. It turns natural language chat and receipt screenshots into strict [Beancount](https://beancount.github.io/) plain-text records.
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/yuzjing/tallymind)](https://goreportcard.com/report/github.com/yuzjing/tallymind)
+
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Container Image](https://img.shields.io/badge/GHCR-tallymind-blue?logo=docker)](https://github.com/yuzjing/tallymind/pkgs/container/tallymind)
