@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
@@ -20,9 +21,16 @@ func Render[T any](templateDir, templateRelativePath string, data any) (*T, erro
 		return nil, fmt.Errorf("read template file [%s] failed: %w", fullPath, err)
 	}
 
+	// 注册 Helm 同款通用辅助函数库
+	funcMap := template.FuncMap{
+		"indent":  indent,
+		"nindent": nindent,
+		"quote":   quote,
+	}
+
 	// 1. Go template 动态变量替换
 
-	tmpl, err := template.New(filepath.Base(fullPath)).Parse(string(content))
+	tmpl, err := template.New(filepath.Base(fullPath)).Funcs(funcMap).Parse(string(content))
 	if err != nil {
 		return nil, fmt.Errorf("parse template file [%s] failed: %w", fullPath, err)
 	}
@@ -51,4 +59,24 @@ func Render[T any](templateDir, templateRelativePath string, data any) (*T, erro
 	}
 
 	return &result, nil
+}
+
+// indent 将多行文本的每一行前面补齐指定数量的空格
+func indent(spaces int, v any) string {
+	pad := strings.Repeat(" ", spaces)
+	s := fmt.Sprintf("%v", v)
+	return strings.ReplaceAll(s, "\n", "\n"+pad)
+
+}
+
+// nindent 先另起一行，再对每一行补齐指定数量的空格
+func nindent(spaces int, v any) string {
+	pad := strings.Repeat(" ", spaces)
+	s := fmt.Sprintf("%v", v)
+	return "\n" + strings.ReplaceAll(s, "\n", "\n"+pad)
+}
+
+// quote 给单行字符串自动加上双引号并做转义防爆
+func quote(v string) string {
+	return fmt.Sprintf("\"%s\"", strings.ReplaceAll(v, `"`, `\"`))
 }
