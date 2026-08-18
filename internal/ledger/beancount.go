@@ -137,6 +137,15 @@ func (t *Transaction) EnsureDefaults(ctx RequestContext) {
 	}
 }
 
+// 负责把盒子里的每笔交易拿出来调上面的方法
+// =========================================================================
+func (b *BatchTransactions) EnsureDefaults(ctx RequestContext) {
+	for i := range b.Transactions {
+		// 逐笔调用
+		b.Transactions[i].EnsureDefaults(ctx)
+	}
+}
+
 // ToBeancountFormat 转换为标准 Beancount 纯文本字符串 (使用 fmt.Fprintf 直写内存缓冲区，性能最高)
 func (t *Transaction) ToBeancountFormat() string {
 	var builder strings.Builder
@@ -291,17 +300,21 @@ func (b *BatchTransactions) ToSummaryString() string {
 
 	for i, tx := range b.Transactions {
 		if i > 0 {
-			builder.WriteString("\n")
+			builder.WriteString("\n┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n")
 		}
 		// 拼接精美的文本卡片
+		fmt.Fprintf(&builder, "💰 金额：%.2f %s\n", tx.Amount, tx.Currency)
+		fmt.Fprintf(&builder, "📂 分类：%s\n", tx.Category)
 		fmt.Fprintf(&builder, "📅 日期：%s\n", tx.Date)
-		fmt.Fprintf(&builder, "🏪 商户：%s\n", tx.Payee)
+		if tx.Payee != "" {
+			fmt.Fprintf(&builder, "🏪 商户：%s\n", tx.Payee)
+		}
 		if tx.Narration != "" {
 			fmt.Fprintf(&builder, "📝 备注：%s\n", tx.Narration)
 		}
-		fmt.Fprintf(&builder, "💰 金额：%.2f %s\n", tx.Amount, tx.Currency)
-		fmt.Fprintf(&builder, "📂 分类：%s\n", tx.Category)
-		fmt.Fprintf(&builder, "💳 账户：%s\n", tx.Account)
+		if tx.Account != "" {
+			fmt.Fprintf(&builder, "💳 账户：%s\n", tx.Account)
+		}
 	}
 
 	return builder.String()

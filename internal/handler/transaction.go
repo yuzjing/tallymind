@@ -55,6 +55,7 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 		FallbackCategory: h.cfg.FallbackCategory,
 		FallbackAccount:  h.cfg.FallbackAccount,
 	}
+
 	// Gin 的极简 JSON 绑定与自动校验
 	var req ledger.BatchTransactions
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -106,6 +107,7 @@ func (h *TransactionHandler) SaveBatch(ctx context.Context, userID string, sourc
 		FallbackCategory: h.cfg.FallbackCategory,
 		FallbackAccount:  h.cfg.FallbackAccount,
 	}
+	batch.EnsureDefaults(reqCtx)
 
 	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, *batch, reqCtx); err != nil {
 		return "", fmt.Errorf("保存交易批次失败: %w", err)
