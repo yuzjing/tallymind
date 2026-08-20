@@ -272,7 +272,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 
 	parts := make([]ContentPart, 0, len(mediaParts)+1)
 	parts = append(parts, ContentPart{Type: "text", Text: promptText})
-	parts = append(parts, parts...)
+	parts = append(parts, mediaParts...)
 	slog.DebugContext(ctx, "[LLM] 准备发起多模态请求",
 		"model", c.cfg.Model,
 		"parts_count", len(parts),
