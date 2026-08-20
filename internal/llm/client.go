@@ -126,14 +126,15 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 		mediaBytes, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return "", fmt.Errorf("read bytes failed: %w", err)
-		} else {
-			// 3. 如果是本地文件路径 -> 直接读取
-			mediaBytes, err = os.ReadFile(mediaURL)
-			if err != nil {
-				return "", fmt.Errorf("read file failed: %w", err)
-			}
-
 		}
+	} else {
+		// 3. 如果是本地文件路径 -> 直接读取
+		var err error
+		mediaBytes, err = os.ReadFile(mediaURL)
+		if err != nil {
+			return "", fmt.Errorf("read file failed: %w", err)
+		}
+
 	}
 
 	// 3. 智能三级 MIME 探测与标准化修正
@@ -209,36 +210,44 @@ func NewClient(cfg Config) (*Client, error) {
 }
 
 func (c *Client) ParseTransaction(ctx context.Context, userText string, attachments ...Attachment) (*ledger.BatchTransactions, error) {
+	trimmedText := strings.TrimSpace(userText)
 	// 1. 组装多模态
-	var parts []ContentPart
-
-	promptText := "请仔细分析传入的信息，识别提取出所有的消费记账明细。"
-
-	if strings.TrimSpace(userText) != "" {
-		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", strings.TrimSpace(userText))
-	}
-
-	parts = append(parts, ContentPart{Type: "text", Text: promptText})
-
-	// 追加媒体附件 (符合 OpenAI Vision 规范)
+	var mediaParts []ContentPart
 	for _, att := range attachments {
 		if strings.TrimSpace(att.URL) == "" {
 			continue
 		}
 		dataURI, err := c.toDataURI(ctx, att.URL)
 		if err != nil {
-			slog.WarnContext(ctx, "[LLM] 附件转DataURI失败，使用原始URL兜底", "type", att.Type, "err", err)
-			dataURI = att.URL
+			slog.WarnContext(ctx, "[LLM] 附件转DataURI失败", "type", att.Type, "err", err)
+			continue
 		}
 
-		parts = append(parts, ContentPart{
+		mediaParts = append(mediaParts, ContentPart{
 			Type:     "image_url",
 			ImageURL: &ImageURL{URL: dataURI}, // 使用 Data URI 转码后的 URL
 		})
 
 	}
+	// 2. 一次性前置拦截：如果既没有用户文本，也没有任何成功转码的媒体附件，直接退出！
 
-	// 2. 组装统一请求 Payload
+	if trimmedText == "" && len(mediaParts) == 0 {
+		return nil, fmt.Errorf("未提供任何有效的账单文本或多模态附件")
+	}
+	// 3. 动态组装提示词
+
+	promptText := "请仔细分析传入的信息，识别提取出所有的消费记账明细。"
+
+	if strings.TrimSpace(userText) != "" {
+		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", strings.TrimSpace(userText))
+	}
+	// 4. 一次性将文本与媒体合并到 part
+
+	parts := make([]ContentPart, 0, len(mediaParts)+1)
+	parts = append(parts, ContentPart{Type: "text", Text: promptText})
+	parts = append(parts, parts...)
+
+	// 5. 组装 ChatRequest
 	reqPayload := ChatRequest{
 		Model: c.cfg.Model,
 		Messages: []ChatMessage{
@@ -258,7 +267,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		return nil, fmt.Errorf("构造 LLM 请求失败: %w", err)
 	}
 
-	// 3. 构造 HTTP POST 请求
+	// 6. 构造 HTTP POST 请求
 	apiURL := fmt.Sprintf("%s/chat/completions", c.cfg.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBytes))
 	if err != nil {
@@ -268,7 +277,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.APIKey))
 
-	// 4. 发起http请求
+	// 7. 发起http请求
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("调用 LLM API 网络异常: %w", err)
@@ -280,13 +289,13 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		return nil, fmt.Errorf("读取 LLM 响应失败: %w", err)
 	}
 
-	// 5. 检查 HTTP 状态码
+	// 8. 检查 HTTP 状态码
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("LLM API 返回异常", "status", resp.StatusCode, "body", string(respBytes))
 		return nil, fmt.Errorf("LLM API 调用失败 (HTTP %d)", resp.StatusCode)
 	}
 
-	// 6. 解包 OpenAI 响应
+	// 9. 解包 OpenAI 响应
 	var chatResp ChatCompletionResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
 		return nil, fmt.Errorf("解析 LLM 响应 JSON 失败: %w", err)
@@ -300,11 +309,11 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		return nil, fmt.Errorf("LLM API 未返回任何有效的 Choice 结果")
 	}
 
-	// 7. 提取 AI 吐出的 JSON 文本并清洗可能的 Markdown 杂质
+	// 10. 提取 AI 吐出的 JSON 文本并清洗可能的 Markdown 杂质
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	content = cleanMarkdownJSON(content)
 
-	// 8. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
+	// 11. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
 	var batch ledger.BatchTransactions
 	if err := json.Unmarshal([]byte(content), &batch); err != nil {
 		slog.Error("LLM 返回文本无法解析为 BatchTransactions", "raw_content", content, "err", err)
