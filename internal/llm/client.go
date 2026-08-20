@@ -109,6 +109,7 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 		if err != nil {
 			return "", fmt.Errorf("创建媒体文件下载请求失败: %w", err)
 		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			return "", fmt.Errorf("下载远程媒体文件失败: %w", err)
@@ -154,6 +155,7 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 	if mimeType == "" || mimeType == "application/octet-stream" {
 		mimeType = "image/jpeg"
 	}
+	slog.InfoContext(ctx, "[LLM] 成功加载多模态文件", "size_bytes", len(mediaBytes), "mime", mimeType)
 
 	// 4. 组装为标准的 Base64 Data URI
 	base64Str := base64.StdEncoding.EncodeToString(mediaBytes)

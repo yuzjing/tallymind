@@ -100,43 +100,49 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMsg) (string, []llm.Attachment, error) {
 	var userText string
 	var attachments []llm.Attachment
+
 	switch msg.MsgType {
 	case "text":
 		userText = msg.Content
+
 	case "image":
 		imgURL := msg.PicURL
 		if imgURL == "" && msg.MediaID != "" {
 			var err error
 			imgURL, err = h.client.GetMediaURL(ctx, msg.MediaID)
 			if err != nil {
-				return "", nil, fmt.Errorf("获取图片素材链接失败: %w", err)
+				return "", nil, fmt.Errorf("获取图片素材失败: %w", err)
 			}
 		}
 		if imgURL != "" {
-			attachments = append(attachments, llm.Attachment{
-				Type: "image_url",
-				URL:  imgURL,
-			})
+			attachments = append(attachments, llm.Attachment{Type: "image_url", URL: imgURL})
 		}
 
-	// 4. 📄 电子发票 / 对账单 PDF 文档 (转发滴滴/美团发票直接记账！)
+	// 🌟 开启微信语音记账通道！
+	case "voice":
+		if msg.MediaID == "" {
+			return "", nil, fmt.Errorf("语音消息缺少 MediaId")
+		}
+		voiceURL, err := h.client.GetMediaURL(ctx, msg.MediaID)
+		if err != nil {
+			return "", nil, fmt.Errorf("获取语音下载链接失败: %w", err)
+		}
+		attachments = append(attachments, llm.Attachment{Type: "audio", URL: voiceURL})
+
+	// 🌟 开启 PDF 电子发票通道！
 	case "file":
 		if msg.MediaID == "" {
 			return "", nil, fmt.Errorf("文件消息缺少 MediaId")
 		}
 		fileURL, err := h.client.GetMediaURL(ctx, msg.MediaID)
 		if err != nil {
-			return "", nil, fmt.Errorf("获取发票文件链接失败: %w", err)
+			return "", nil, fmt.Errorf("获取文件下载链接失败: %w", err)
 		}
 		if msg.Title != "" {
-			userText = fmt.Sprintf("发票/文档名称: %s", msg.Title)
+			userText = fmt.Sprintf("发票名称: %s", msg.Title)
 		}
-		attachments = append(attachments, llm.Attachment{
-			Type: "document",
-			URL:  fileURL,
-		})
+		attachments = append(attachments, llm.Attachment{Type: "document", URL: fileURL})
 
-	// 5. 📍 地理位置打卡记账 (微信发送位置)
 	case "location":
 		userText = fmt.Sprintf("用户在位置打卡记账：%s (坐标: %s, %s)", msg.Label, msg.LocationX, msg.LocationY)
 
