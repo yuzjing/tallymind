@@ -297,7 +297,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 
 	// 看看发给大模型的数据结构长啥样 (截取前 500 个字符，防止 Base64 刷屏)
 	preview := string(reqBytes)
-	if len(preview) > 100 {
+	if len(preview) > 1000 {
 		preview = preview[:1000] + "...[后面太长已截断]"
 	}
 	slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
