@@ -162,3 +162,13 @@ func (c *Client) Push(ctx context.Context, msg notifier.Message) error {
 		return c.SendMessage(ctx, NewTextMessage(toUser, fmt.Sprintf("收到 [%s] 消息:\n%s", msg.Type, msg.Content)))
 	}
 }
+
+// GetMediaURL 根据 MediaID 生成带有有效 Token 的企微临时素材下载地址
+func (c *Client) GetMediaURL(ctx context.Context, mediaID string) (string, error) {
+	token, err := c.GetAccessToken(ctx)
+	if err != nil {
+		return "", fmt.Errorf("获取素材下载 Token 失败: %w", err)
+
+	}
+	return fmt.Sprintf("https://qyapi.weixin.qq.com/cgi-bin/media/get?access_token=%s&media_id=%s", token, mediaID), nil
+}

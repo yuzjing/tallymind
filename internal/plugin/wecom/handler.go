@@ -38,27 +38,15 @@ func NewWeComHandler(
 
 func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 	userID := msg.FromUserName
-	var userText string
-	var attachments []llm.Attachment
-
-	// 1. 根据企微的 MsgType 转换输入参数 (分流)
-	switch msg.MsgType {
-	case "text":
-		userText = msg.Content
-		slog.InfoContext(ctx, "[WeCom] 收到文本记账消息", "userID", userID, "text", userText)
-	case "image":
-		slog.InfoContext(ctx, "[WeCom] 收到图片记账消息", "userID", userID, "picURL", msg.PicURL)
-		attachments = append(attachments, llm.Attachment{
-			Type: "image_url",
-			URL:  msg.PicURL,
-		})
-	default:
-		slog.WarnContext(ctx, "[WeCom] 收到暂不支持的消息类型", "userID", userID, "msgType", msg.MsgType)
-		_ = h.client.SendMessage(ctx, NewTextMessage(userID, fmt.Sprintf("⚠️ 暂不支持 [%s] 类型消息记账", msg.MsgType)))
+	//  1. 统一提取：将企微协议消息转为通用的 (文本, 附件列表)
+	userText, attachments, err := h.parseIncomingMessage(ctx, msg)
+	if err != nil {
+		slog.ErrorContext(ctx, "[WeCom] 收到暂不支持的消息类型", "userID", userID, "msgType", msg.MsgType, "err", err)
+		_ = h.client.SendMessage(ctx, NewTextMessage("⚠️ 暂不支持 [%s] 类型消息记账", msg.MsgType))
 		return
 	}
 
-	// 2. 调用通用的 LLM 识图/文本记账管道
+	// 2. 调用通用的 LLM 记账管道
 	batch, err := h.llmClient.ParseTransaction(ctx, userText, attachments...)
 	if err != nil {
 		slog.ErrorContext(ctx, "[WeCom] LLM 解析失败", "userID", userID, "err", err)
@@ -106,4 +94,55 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 	}
 	slog.InfoContext(ctx, "[WeCom] 发送消息成功", "userID", userID)
 
+}
+
+// parseIncomingMessage 私有提取器：专门将企微特有消息映射为 LLM 通用格式 (图/文/音/档)
+func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMsg) (string, []llm.Attachment, error) {
+	var userText string
+	var attachments []llm.Attachment
+	switch msg.MsgType {
+	case "text":
+		userText = msg.Content
+	case "image":
+		imgURL := msg.PicURL
+		if imgURL == "" && msg.MediaID != "" {
+			var err error
+			imgURL, err = h.client.GetMediaURL(ctx, msg.MediaID)
+			if err != nil {
+				return "", nil, fmt.Errorf("获取图片素材链接失败: %w", err)
+			}
+		}
+		if imgURL != "" {
+			attachments = append(attachments, llm.Attachment{
+				Type: "image_url",
+				URL:  imgURL,
+			})
+		}
+
+	// 4. 📄 电子发票 / 对账单 PDF 文档 (转发滴滴/美团发票直接记账！)
+	case "file":
+		if msg.MediaID == "" {
+			return "", nil, fmt.Errorf("文件消息缺少 MediaId")
+		}
+		fileURL, err := h.client.GetMediaURL(ctx, msg.MediaID)
+		if err != nil {
+			return "", nil, fmt.Errorf("获取发票文件链接失败: %w", err)
+		}
+		if msg.Title != "" {
+			userText = fmt.Sprintf("发票/文档名称: %s", msg.Title)
+		}
+		attachments = append(attachments, llm.Attachment{
+			Type: "document",
+			URL:  fileURL,
+		})
+
+	// 5. 📍 地理位置打卡记账 (微信发送位置)
+	case "location":
+		userText = fmt.Sprintf("用户在位置打卡记账：%s (坐标: %s, %s)", msg.Label, msg.LocationX, msg.LocationY)
+
+	default:
+		return "", nil, fmt.Errorf("暂不支持 [%s] 类型消息", msg.MsgType)
+	}
+
+	return userText, attachments, nil
 }

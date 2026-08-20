@@ -19,20 +19,6 @@ type EncryptedXMLMsg struct {
 	Encrypt    string   `xml:"Encrypt"`
 }
 
-// PlainXMLMsg 企微消息解密后的明文 XML 结构体
-type PlainXMLMsg struct {
-	XMLName      xml.Name `xml:"xml"`
-	ToUserName   string   `xml:"ToUserName"`
-	FromUserName string   `xml:"FromUserName"`
-	CreateTime   int64    `xml:"CreateTime"`
-	MsgType      string   `xml:"MsgType"`
-	Content      string   `xml:"Content"`
-	PicURL       string   `xml:"PicUrl"`
-	MediaID      string   `xml:"MediaId"`
-	MsgID        string   `xml:"MsgID"`
-	AgentID      string   `xml:"AgentID"`
-}
-
 // CallbackHandler 企微 Webhook 路由接收器
 type CallbackHandler struct {
 	cfg          *config.WeComConfig

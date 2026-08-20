@@ -1,6 +1,8 @@
 // plugin/wecom/message.go (纯净版，零 yaml 标签污染！)
 package wecom
 
+import "encoding/xml"
+
 // MessageRequest 企微全能统一消息模型 (HTTP 自建应用 与 WSS 长连接机器人共用)
 type MessageRequest struct {
 	// ==================== 1. HTTP 专用路由与控制字段 (WSS 模式留空自动 omitempty 忽略) ====================
@@ -52,6 +54,26 @@ type NewsArticle struct {
 	Description string `json:"description,omitempty"`
 	URL         string `json:"url"`
 	PicURL      string `json:"picurl,omitempty"`
+}
+
+// PlainXMLMsg 企微消息解密后的明文 XML 结构体
+type PlainXMLMsg struct {
+	XMLName      xml.Name `xml:"xml"`
+	ToUserName   string   `xml:"ToUserName"`
+	FromUserName string   `xml:"FromUserName"`
+	CreateTime   int64    `xml:"CreateTime"`
+	MsgType      string   `xml:"MsgType"`    // text / image / voice / file / location
+	Content      string   `xml:"Content"`    // 文本内容
+	PicURL       string   `xml:"PicUrl"`     // 图片链接
+	MediaID      string   `xml:"MediaId"`    // 语音 / 文件的素材 ID
+	Format       string   `xml:"Format"`     // 语音格式 (如 amr, mp3)
+	FileExt      string   `xml:"FileExt"`    // 文件后缀 (如 pdf)
+	Title        string   `xml:"Title"`      // 文件名/标题
+	LocationX    string   `xml:"Location_X"` // 地理位置纬度
+	LocationY    string   `xml:"Location_Y"` // 地理位置经度
+	Label        string   `xml:"Label"`      // 地理位置名称/地址
+	MsgID        int64    `xml:"MsgId"`
+	AgentID      int64    `xml:"AgentID"`
 }
 
 type TemplateCardContent struct {
