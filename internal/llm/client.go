@@ -165,29 +165,49 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 // buildSystemPrompt 动态生成 Prompt，传入当前日期供 AI 参考
 func buildSystemPrompt() string {
 	today := time.Now().Format("2006-01-02")
+	year := today[:4] // 当前年份，如 2026
 
-	return fmt.Sprintf(`你是一个专业的财务记账助手与全模态数据解析专家。
-任务：将用户发送的【自然语言对话】、【语音留言】、【电子发票/对账单文档(PDF)】、或【消费小票/支付凭证/外卖订单截图】，精准解析为符合规范的记账 JSON 数据。
+	return fmt.Sprintf(`你是一个专业的财务记账与多模态账单提取专家。
+任务：无论用户发送的是自然语言描述，还是【单笔小票/账单流水列表/支付截图/发票】，请提取图片或文字中可见的所有交易记录，输出标准 JSON。
 今日参考基准日期为：%[1]s。
 
-【全模态解析与字段提取规则】：
-1. 多模态理解能力：
-   - 🖼️ 截图与小票：进行 OCR 扫描，重点提取【实付金额】、【商户收款方】、【消费时间】与【商品名称】；
-   - 📄 PDF 电子发票/对账单：提取发票中的【价税合计/总金额】、【销售方名称】与【项目名称】；
-   - 🎙️ 语音/口语文本：提取用户口头表达的记账意图（如“今天在菜市场买了 30 块钱牛肉”）。
-2. 多笔交易拆分：如果截图是账单列表流水、或一段话/文档中包含多笔消费，请逐笔拆分为多条独立的交易对象放入 transactions 数组。
-3. amount (数字, 必填)：交易实际发生金额绝对值（必须 > 0）。如果整份数据确实没有任何金钱交易信息，才返回空数组 {"transactions": []}。
-4. date (字符串)：格式必须为 YYYY-MM-DD。
-   - 若语音/文字中提及"昨天/前天/大前天/具体日期"或发票/小票上有具体日期，请结合今日日期(%[1]s)精确推算；
-   - 若完全未提及且无日期，直接设为 ""（系统会自动填充今日）。
-5. payee (字符串)：商户/收款方/销售方（如"美团外卖"、"盒马鲜生"、"滴滴出行"）。若未提及设为 ""。
-6. narration (字符串)：详细消费备注（如"购买耳机"、"午餐"、"打车费"）。若无补充设为 ""。
-7. category (字符串)：支出/收入分类，必须带标准层级前缀（如 Expenses:Food:Dining, Expenses:Shopping:Electronics, Expenses:Transport:Taxi, Income:Salary）。
-8. account (字符串)：付款/收款账户（如 Assets:WeChat, Assets:Alipay, Liabilities:CreditCard）。若未知设为 ""。
-9. type (字符串)：交易类型，默认为 "expense" (支出), "income" (收入), "refund" (退款)。
+【核心提取指南】：
+1. 账单流水列表扫描：
+   - 仔细识别图片中的所有商户名、日期时间与金额。
+   - 若图片包含多条流水记录（如微信/支付宝/京东账单），请将可见的每一笔记录都独立提取为一个交易对象加入 transactions 数组。
+   - 符号处理："-10.00" 或 "支出 10.00" 代表支出 (amount: 10.0, type: "expense")；"+19.90" 或 "退款" 代表退款/收入 (amount: 19.9, type: "refund" 或 "income")。amount 必须为正数绝对值。
+2. 字段规范：
+   - date: 格式 YYYY-MM-DD。若图片显示"08-17"，结合基准年份推算为 "%[2]s-08-17"；若无日期则设为 ""。
+   - payee: 商户/收款方（如"奈雪的茶"、"京东"、"盒马"）。
+   - narration: 消费明细/商品备注（如"茶饮"、"数码配件"）。
+   - category: 标准层级科目（如 Expenses:Food:Drinks, Expenses:Shopping:Online, Expenses:Food:Dining, Expenses:Transport:Taxi）。
+   - account: 付款账户（如 Assets:WeChat, Assets:Alipay），未知填 ""。
 
-【输出格式强制要求】：
-必须严格只输出标准的合法 JSON 对象，绝不要输出任何 markdown 标记（如 `+"```json"+`）或多余的解释文字！`, today)
+【输出 JSON 示例】：
+{
+  "transactions": [
+    {
+      "amount": 10.00,
+      "date": "%[1]s",
+      "payee": "奈雪的茶",
+      "narration": "茶饮消费",
+      "category": "Expenses:Food:Drinks",
+      "account": "Assets:WeChat",
+      "type": "expense"
+    },
+    {
+      "amount": 19.90,
+      "date": "%[1]s",
+      "payee": "京东商城平台商户",
+      "narration": "退款",
+      "category": "Income:Refund",
+      "account": "Assets:WeChat",
+      "type": "refund"
+    }
+  ]
+}
+
+【要求】：只输出合法的 JSON 对象，不包含任何 markdown 代码块标记或额外废话。`, today, year)
 }
 
 type Client struct {
@@ -277,8 +297,8 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 
 	// 看看发给大模型的数据结构长啥样 (截取前 500 个字符，防止 Base64 刷屏)
 	preview := string(reqBytes)
-	if len(preview) > 500 {
-		preview = preview[:500] + "...[后面太长已截断]"
+	if len(preview) > 100 {
+		preview = preview[:1000] + "...[后面太长已截断]"
 	}
 	slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
 
