@@ -118,7 +118,7 @@ func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMs
 			attachments = append(attachments, llm.Attachment{Type: "image_url", URL: imgURL})
 		}
 
-	// 🌟 开启微信语音记账通道！
+	// 微信语音记账通道！
 	case "voice":
 		if msg.MediaID == "" {
 			return "", nil, fmt.Errorf("语音消息缺少 MediaId")
@@ -129,7 +129,7 @@ func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMs
 		}
 		attachments = append(attachments, llm.Attachment{Type: "audio", URL: voiceURL})
 
-	// 🌟 开启 PDF 电子发票通道！
+	// PDF 电子发票通道！
 	case "file":
 		if msg.MediaID == "" {
 			return "", nil, fmt.Errorf("文件消息缺少 MediaId")

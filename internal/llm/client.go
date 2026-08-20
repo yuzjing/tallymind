@@ -247,12 +247,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	if strings.TrimSpace(userText) != "" {
 		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", strings.TrimSpace(userText))
 	}
-	// 临时测试
 
-	testPrompt := "请仔细查看这张图片，用中文把你在图片中看到的【所有商户名字、金额数字、文字明细】完整列出来！"
-	if trimmedText != "" {
-		testPrompt += fmt.Sprintf(" 用户补充说明：%s", trimmedText)
-	}
 	// 4. 一次性将文本与媒体合并到 part
 
 	parts := make([]ContentPart, 0, len(mediaParts)+1)
@@ -279,6 +274,14 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	}
 
 	reqBytes, err := json.Marshal(reqPayload)
+
+	// 看看发给大模型的数据结构长啥样 (截取前 500 个字符，防止 Base64 刷屏)
+	preview := string(reqBytes)
+	if len(preview) > 500 {
+		preview = preview[:500] + "...[后面太长已截断]"
+	}
+	slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
+
 	if err != nil {
 		return nil, fmt.Errorf("构造 LLM 请求失败: %w", err)
 	}
@@ -301,6 +304,10 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(resp.Body)
+
+	// 看看接口返回的原始未清洗文本到底是什么
+	slog.WarnContext(ctx, "📥【原始响应】谷歌 API 返回的完整原始文本", "raw_resp", string(respBytes))
+
 	if err != nil {
 		return nil, fmt.Errorf("读取 LLM 响应失败: %w", err)
 	}
@@ -328,7 +335,6 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	// 10. 提取 AI 吐出的 JSON 文本并清洗可能的 Markdown 杂质
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	content = cleanMarkdownJSON(content)
-	slog.WarnContext(ctx, "🔍【诊断测试】大模型看到的图片文字内容", "ai_reply", content)
 
 	// 11. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
 	var batch ledger.BatchTransactions
