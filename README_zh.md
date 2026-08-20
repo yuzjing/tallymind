@@ -64,7 +64,7 @@ podman run -d \
 
 ## 🗺️ 开发计划 (Roadmap)
 
-- [x] OpenAI 兼容的多模态解析管道 (文本 + 小票截图)
+- [x] OpenAI 兼容的多模态解析管道 (文件 + 图像+ 语音)
 - [x] Beancount 纯文本复式记账写入与格式化
 - [x] 外部挂载式 YAML 模板热更新引擎
 - [x] 企业微信 / 微信微工作台 Webhook 适配器

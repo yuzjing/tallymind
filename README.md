@@ -97,7 +97,7 @@ podman run -d \
 
 ## 🗺️ Roadmap
 
-- [x] OpenAI-compatible multimodal parsing (Text + Receipt Image)
+- [x] OpenAI-compatible multimodal parsing (File + Image + Voice)
 - [x] Beancount plain-text ledger ingestion
 - [x] External YAML template hot-reloading
 - [x] WeCom / WeChat Work Plugin webhook adapter
