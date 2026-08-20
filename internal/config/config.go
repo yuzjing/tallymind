@@ -17,6 +17,7 @@ type AppConfig struct {
 	Env      string // "development" / "production"
 	Debug    bool   // true / false
 	LogLevel string // "debug" / "info" / "warn" / "error"
+	LogDir   string // 日志文件路径
 	Port     string // 监听端口
 
 	// 1. 通道独立开关
@@ -84,6 +85,7 @@ func Load() *Config {
 			Env:      cmp.Or(os.Getenv("APP_ENV"), "development"),
 			Debug:    getEnvBool("DEBUG", false),
 			LogLevel: cmp.Or(os.Getenv("LOG_LEVEL"), "info"),
+			LogDir:   cmp.Or(os.Getenv("LOG_DIR"), ""), // 默认日志目录
 			Port:     cmp.Or(os.Getenv("SERVER_PORT"), "8080"),
 
 			// 通道独立开关

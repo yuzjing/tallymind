@@ -164,24 +164,28 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 func buildSystemPrompt() string {
 	today := time.Now().Format("2006-01-02")
 
-	return fmt.Sprintf(`你是一个专业的财务记账 JSON 提取助手。
-任务：将用户的自然语言（或多笔消费描述）准确解析为符合规范的 JSON 对象。
-今日参考日期为：%s。
+	return fmt.Sprintf(`你是一个专业的财务记账助手与全模态数据解析专家。
+任务：将用户发送的【自然语言对话】、【语音留言】、【电子发票/对账单文档(PDF)】、或【消费小票/支付凭证/外卖订单截图】，精准解析为符合规范的记账 JSON 数据。
+今日参考基准日期为：%[1]s。
 
-【字段提取规则与空值不传递原则】：
-1. transactions (数组): 包含解析出的所有交易对象（一句话多笔消费需拆分为多项）。
-2. amount (数字, 必填): 交易金额绝对值（必须 > 0）。如果无法识别有效金额，请返回空数组 {"transactions": []}。
-3. date (字符串): 交易实际日期 (格式 YYYY-MM-DD)。
-   - 若用户提及"昨天/前天/大前天/具体日期"，请结合今日日期(%s)进行精确推算；
-   - 若用户【未提及日期】，请直接设为 ""，切勿盲目猜测！
-4. payee (字符串): 商户/交易对手 (如"盒马鲜生"、"滴滴打车")。若用户未提及，直接设为 ""。
-5. narration (字符串): 详细消费备注 (如"买水果")。若无补充信息，直接设为 ""。
-6. category (字符串): 支出/收入分类 (必须带标准前缀，如 Expenses:Food:Groceries, Expenses:Transport:Taxi, Income:Salary)。若无法确定，直接设为 ""！
-7. account (字符串): 付款/资产账户 (如 Assets:WeChat, Liabilities:CreditCard)。若用户未提及支付方式，直接设为 ""！
-8. type (字符串): 交易类型，可选 "expense" (普通支出，默认), "income" (收入), "refund" (退款)。
+【全模态解析与字段提取规则】：
+1. 多模态理解能力：
+   - 🖼️ 截图与小票：进行 OCR 扫描，重点提取【实付金额】、【商户收款方】、【消费时间】与【商品名称】；
+   - 📄 PDF 电子发票/对账单：提取发票中的【价税合计/总金额】、【销售方名称】与【项目名称】；
+   - 🎙️ 语音/口语文本：提取用户口头表达的记账意图（如“今天在菜市场买了 30 块钱牛肉”）。
+2. 多笔交易拆分：如果截图是账单列表流水、或一段话/文档中包含多笔消费，请逐笔拆分为多条独立的交易对象放入 transactions 数组。
+3. amount (数字, 必填)：交易实际发生金额绝对值（必须 > 0）。如果整份数据确实没有任何金钱交易信息，才返回空数组 {"transactions": []}。
+4. date (字符串)：格式必须为 YYYY-MM-DD。
+   - 若语音/文字中提及"昨天/前天/大前天/具体日期"或发票/小票上有具体日期，请结合今日日期(%[1]s)精确推算；
+   - 若完全未提及且无日期，直接设为 ""（系统会自动填充今日）。
+5. payee (字符串)：商户/收款方/销售方（如"美团外卖"、"盒马鲜生"、"滴滴出行"）。若未提及设为 ""。
+6. narration (字符串)：详细消费备注（如"购买耳机"、"午餐"、"打车费"）。若无补充设为 ""。
+7. category (字符串)：支出/收入分类，必须带标准层级前缀（如 Expenses:Food:Dining, Expenses:Shopping:Electronics, Expenses:Transport:Taxi, Income:Salary）。
+8. account (字符串)：付款/收款账户（如 Assets:WeChat, Assets:Alipay, Liabilities:CreditCard）。若未知设为 ""。
+9. type (字符串)：交易类型，默认为 "expense" (支出), "income" (收入), "refund" (退款)。
 
 【输出格式强制要求】：
-必须且只能输出合法的 JSON 对象，不要包含任何 Markdown 代码块标记（如 `+"```json"+`）或多余的解释文字！`, today, today)
+必须严格只输出标准的合法 JSON 对象，绝不要输出任何 markdown 标记（如 `+"```json"+`）或多余的解释文字！`, today)
 }
 
 type Client struct {
@@ -246,6 +250,10 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	parts := make([]ContentPart, 0, len(mediaParts)+1)
 	parts = append(parts, ContentPart{Type: "text", Text: promptText})
 	parts = append(parts, parts...)
+	slog.DebugContext(ctx, "[LLM] 准备发起多模态请求",
+		"model", c.cfg.Model,
+		"parts_count", len(parts),
+		"user_text", userText)
 
 	// 5. 组装 ChatRequest
 	reqPayload := ChatRequest{
@@ -320,7 +328,9 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		return nil, fmt.Errorf("AI 提取的数据无法转为合规账单: %w", err)
 	}
 
-	slog.Debug("LLM 提取结果", "content", content, "json", batch)
+	slog.DebugContext(ctx, "[LLM] 大模型提取完成",
+		"raw_json", content,
+		"transaction_count", len(batch.Transactions))
 
 	return &batch, nil
 }

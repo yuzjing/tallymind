@@ -4,8 +4,9 @@ package main
 
 import (
 	"context"
+	"io"
 	"log/slog"
-	"strings"
+	"path/filepath"
 
 	"os"
 	"os/signal"
@@ -25,32 +26,43 @@ import (
 	"tallymind/internal/plugin/wecom"
 )
 
-func main() {
-	cfg := config.Load()
-
+func initLogger(logLevel, logDir string) {
 	var level slog.Level
 
-	if cfg.App.Debug {
-		level = slog.LevelDebug // DEBUG=true 拥有最高优先级，强行开启全量调试
-	} else {
-		// 根据 LOG_LEVEL 字符串精准过滤
-		switch strings.ToLower(cfg.App.LogLevel) {
-		case "debug":
-			level = slog.LevelDebug
-		case "warn":
-			level = slog.LevelWarn
-		case "error":
-			level = slog.LevelError
-		default:
-			level = slog.LevelInfo // 默认 info
+	switch logLevel {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo // 默认 info
+	}
+
+	var writers []io.Writer = []io.Writer{os.Stdout}
+
+	if logDir != "" {
+		_ = os.MkdirAll(logDir, 0755)
+		logFilePath := filepath.Join(logDir, "tallymind.log")
+		logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err == nil {
+			writers = append(writers, logFile)
 		}
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	multiwriter := io.MultiWriter(writers...)
+
+	logger := slog.New(slog.NewTextHandler(multiwriter, &slog.HandlerOptions{
 		Level: level,
 	}))
 
 	slog.SetDefault(logger) // 设置全局日志记录器
+}
+
+func main() {
+	cfg := config.Load()
+	initLogger(cfg.App.LogLevel, cfg.App.LogDir)
 
 	slog.Info("🚀 tallymind 启动中 | 应用开关配置", "App", cfg.App)
 	slog.Info("📁 账本存储配置", "ledger", cfg.Ledger)
