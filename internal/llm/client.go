@@ -295,10 +295,10 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 
 	reqBytes, err := json.Marshal(reqPayload)
 
-	// 看看发给大模型的数据结构长啥样 (截取前 500 个字符，防止 Base64 刷屏)
+	// 看看发给大模型的数据结构长啥样 (截取前 1000 个字符，防止 Base64 刷屏)
 	preview := string(reqBytes)
-	if len(preview) > 1000 {
-		preview = preview[:1000] + "...[后面太长已截断]"
+	if len(preview) > 3000 {
+		preview = preview[:3000] + "...[后面太长已截断]"
 	}
 	slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
 
