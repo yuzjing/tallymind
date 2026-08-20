@@ -4,11 +4,15 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 	"tallymind/internal/ledger"
 	"time"
 
@@ -35,9 +39,22 @@ type Attachment struct {
 
 // openai 请求/响应标准体(多模态归一化)
 type ContentPart struct {
-	Type     string    `json:"type"`                // "text" 或 "image_url"
-	Value    string    `json:"text,omitempty"`      // 当 type="text"
-	ImageURL *ImageURL `json:"image_url,omitempty"` // 当 type="image_url"
+	Type       string        `json:"type"`                  // "text" 或 "image_url"
+	Text       string        `json:"text,omitempty"`        // 当 type="text"
+	ImageURL   *ImageURL     `json:"image_url,omitempty"`   // 当 type="image_url"
+	InputAudio *AudioContent `json:"input_audio,omitempty"` // 语音记账 (预留)
+	File       *MediaURL     `json:"file,omitempty"`        // PDF 电子发票/文档 (预留)
+}
+
+// 通用媒体链接/DataURI载体 (图片、PDF 文件共用)
+type MediaURL struct {
+	URL string `json:"url"`
+}
+
+// 语音/音频消息载体 (兼容 OpenAI Audio 协议)
+type AudioContent struct {
+	Data   string `json:"data"`   // Base64 编码的音频原始数据
+	Format string `json:"format"` // 音频格式: "mp3", "wav", "amr"
 }
 
 type ImageURL struct {
@@ -74,6 +91,72 @@ type ChatCompletionResponse struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
+}
+
+// toDataURI 智能多媒体转码器 (支持：图片、PDF文档、音频、视频全部格式)
+func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error) {
+	//1. 如果已经是 Data URI (Base64)，直接返回
+	if strings.HasPrefix(mediaURL, "data:") {
+		return mediaURL, nil
+	}
+
+	var mediaBytes []byte
+	var mimeType string
+
+	// 2. 如果是远程 HTTP/HTTPS 链接 -> 下载到内存
+	if strings.HasPrefix(mediaURL, "http://") || strings.HasPrefix(mediaURL, "https://") {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, mediaURL, nil)
+		if err != nil {
+			return "", fmt.Errorf("创建媒体文件下载请求失败: %w", err)
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("下载远程媒体文件失败: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("下载远程媒体文件错误码 %d", resp.StatusCode)
+		}
+
+		// 优先从 HTTP Header 提取真实的 MIME 类型并剥离 charset
+
+		mimeType, _, _ = mime.ParseMediaType(resp.Header.Get("Content-Type"))
+
+		mediaBytes, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("read bytes failed: %w", err)
+		} else {
+			// 3. 如果是本地文件路径 -> 直接读取
+			mediaBytes, err = os.ReadFile(mediaURL)
+			if err != nil {
+				return "", fmt.Errorf("read file failed: %w", err)
+			}
+
+		}
+	}
+
+	// 3. 智能三级 MIME 探测与标准化修正
+	// A. 如果 Header 没有，用文件头 Magic Bytes 自动嗅探
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType, _, _ = mime.ParseMediaType(http.DetectContentType(mediaBytes))
+
+	}
+
+	// B. 如果仍是泛类型，让 Go 标准库查系统扩展名字典 (自动识别 .mp3, .wav, .pdf, .mp4 等几百种后缀)
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		if extMime := mime.TypeByExtension(filepath.Ext(mediaURL)); extMime != "" {
+			mimeType, _, _ = mime.ParseMediaType(extMime)
+		}
+	}
+	// C. 终极默认兜底 (确保永远不为空)
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType = "image/jpeg"
+	}
+
+	// 4. 组装为标准的 Base64 Data URI
+	base64Str := base64.StdEncoding.EncodeToString(mediaBytes)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64Str), nil
 }
 
 // buildSystemPrompt 动态生成 Prompt，传入当前日期供 AI 参考
@@ -135,20 +218,24 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", strings.TrimSpace(userText))
 	}
 
-	parts = append(parts, ContentPart{Type: "text", Value: promptText})
+	parts = append(parts, ContentPart{Type: "text", Text: promptText})
 
 	// 追加媒体附件 (符合 OpenAI Vision 规范)
 	for _, att := range attachments {
 		if strings.TrimSpace(att.URL) == "" {
 			continue
 		}
-		switch att.Type {
-		case "image", "image_url":
-			parts = append(parts, ContentPart{
-				Type:  att.Type,
-				Value: att.URL,
-			})
+		dataURI, err := c.toDataURI(ctx, att.URL)
+		if err != nil {
+			slog.WarnContext(ctx, "[LLM] 附件转DataURI失败，使用原始URL兜底", "type", att.Type, "err", err)
+			dataURI = att.URL
 		}
+
+		parts = append(parts, ContentPart{
+			Type:     "image_url",
+			ImageURL: &ImageURL{URL: dataURI}, // 使用 Data URI 转码后的 URL
+		})
+
 	}
 
 	// 2. 组装统一请求 Payload
