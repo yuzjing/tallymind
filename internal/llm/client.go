@@ -247,6 +247,12 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	if strings.TrimSpace(userText) != "" {
 		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", strings.TrimSpace(userText))
 	}
+	// 临时测试
+
+	testPrompt := "请仔细查看这张图片，用中文把你在图片中看到的【所有商户名字、金额数字、文字明细】完整列出来！"
+	if trimmedText != "" {
+		testPrompt += fmt.Sprintf(" 用户补充说明：%s", trimmedText)
+	}
 	// 4. 一次性将文本与媒体合并到 part
 
 	parts := make([]ContentPart, 0, len(mediaParts)+1)
@@ -322,6 +328,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	// 10. 提取 AI 吐出的 JSON 文本并清洗可能的 Markdown 杂质
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	content = cleanMarkdownJSON(content)
+	slog.WarnContext(ctx, "🔍【诊断测试】大模型看到的图片文字内容", "ai_reply", content)
 
 	// 11. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
 	var batch ledger.BatchTransactions
