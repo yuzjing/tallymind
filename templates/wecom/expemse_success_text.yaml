@@ -1,3 +1,7 @@
 msgtype: "text"
 text:
-  content: {{ printf "🌿 记账成功\n━━━━━━━━━━━━━━\n%s\n━━━━━━━━━━━━━━\n<a href=\"%s\">📊 点击进入财务数据看板 ›</a>" .Summary .JumpURL | quote }}
+  content: {{ if .IsSingle }}
+    {{ printf "👌 已记好：%s ￥%.2f (%s)\n━━━━━━━━━━━━━━━━━━\n<a href=\"%s\">🧾 点击查看账单详情与小票 ›</a>" .PrimaryName .FirstItem.Amount .PrimaryCategory .JumpURL | quote }}
+  {{ else }}
+    {{ printf "👌 已记好：共计入 %d 笔账单，合计 ￥%.2f\n━━━━━━━━━━━━━━━━━━\n<a href=\"%s\">🧾 查看这 %d 笔明细与小票 ›</a>" .Count .TotalAmount .JumpURL .Count | quote }}
+  {{ end }}

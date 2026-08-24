@@ -3,7 +3,6 @@ package wecom
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +14,8 @@ import (
 	"tallymind/internal/llm"
 	"tallymind/internal/notifier"
 	"time"
+
+	"tallymind/internal/reporter"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -56,7 +57,7 @@ type MsgCallbackBody struct {
 
 type WSClient struct {
 	wecomCfg  config.WeComConfig
-	ledgerCfg config.LedgerConfig
+	ledgerCfg ledger.Config
 	llmClient *llm.Client
 	conn      *websocket.Conn
 	mu        sync.Mutex
@@ -95,7 +96,7 @@ func buildWeComRespondBody(msg notifier.Message) *MessageRequest {
 	}
 }
 
-func NewWSClient(wecomCfg config.WeComConfig, ledgerCfg config.LedgerConfig, llmClient *llm.Client) *WSClient {
+func NewWSClient(wecomCfg config.WeComConfig, ledgerCfg ledger.Config, llmClient *llm.Client) *WSClient {
 	return &WSClient{
 		wecomCfg:  wecomCfg,
 		ledgerCfg: ledgerCfg,
@@ -242,18 +243,13 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 
 	userText := msgBody.Text.Content
 	userID := msgBody.From.UserID
-	reporter := cmp.Or(userID, ws.ledgerCfg.DefaultReporter)
 
 	slog.Debug("WSS 收到企微消息回调", "用户ID", userID, "消息内容", userText)
 
 	// 1. 组装 RequestContext
 	reqCtx := ledger.RequestContext{
-		UserID:           userID,
-		Reporter:         reporter,
-		SourceChannel:    "wecom_wss",
-		DefaultCurrency:  ws.ledgerCfg.DefaultCurrency,
-		FallbackCategory: ws.ledgerCfg.FallbackCategory,
-		FallbackAccount:  ws.ledgerCfg.FallbackAccount,
+		UserID:        userID,
+		SourceChannel: "wecom_wss",
 	}
 
 	// 2. 调用 LLM 客户端解析自然语言 -> BatchTransactions 结构体
@@ -293,7 +289,7 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 	}
 
 	// 3. 追加写入 Beancount 文件
-	if err := ledger.AppendBatchTransactions(ws.ledgerCfg.FilePath, *batch, reqCtx); err != nil {
+	if err := ledger.AppendBatchTransactions(ws.ledgerCfg.FilePath, batch, ws.ledgerCfg, reqCtx); err != nil {
 		slog.Error("追加写入账单文件失败", "err", err)
 		ws.respondMsg(frame.Headers.ReqID, msgBody.ResponseURL, notifier.Message{
 			Type:    notifier.TypeText,
@@ -302,11 +298,19 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 		return
 	}
 
-	replySummary := batch.ToSummaryString()
+	replyData := reporter.BuildReplyData(batch, "", "")
 
+	var replyText string
+	if replyData.IsSingle {
+		replyText = fmt.Sprintf("👌 已记好：%s ￥%.2f (%s)", replyData.PrimaryName, replyData.FirstItem.Amount, replyData.PrimaryCategory)
+	} else {
+		replyText = fmt.Sprintf("👌 已记好：共计入 %d 笔消费，合计 ￥%.2f", replyData.Count, replyData.TotalAmount)
+	}
+
+	// 5. 原汁原味调用你原本的 ws.respondMsg！
 	ws.respondMsg(frame.Headers.ReqID, msgBody.ResponseURL, notifier.Message{
-		Type:    notifier.TypeText, // 或者是 notifier.TypeMarkdown
-		Content: replySummary,
+		Type:    notifier.TypeText,
+		Content: replyText,
 	})
 
 }

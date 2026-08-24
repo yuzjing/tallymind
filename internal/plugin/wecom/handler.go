@@ -3,12 +3,14 @@ package wecom
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"tallymind/internal/handler"
+	"tallymind/internal/ledger"
 	"tallymind/internal/llm"
+	"tallymind/internal/reporter"
 	"tallymind/internal/template"
+	"time"
 )
 
 type WeComHandler struct {
@@ -59,32 +61,39 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 		return
 	}
 	// 3. 调 transaction 包存盘，拿到摘要
-	summary, err := h.txHandler.SaveBatch(ctx, userID, "wecom_plugin", batch)
+	msgTime := time.Unix(msg.CreateTime, 0)
+	if msg.CreateTime == 0 {
+		msgTime = time.Now()
+	}
+
+	reqCtx := ledger.RequestContext{
+		UserID:        userID,
+		SourceChannel: "wecom_plugin",
+		MessageID:     fmt.Sprintf("%d", msg.MsgID),
+		MessageTime:   msgTime,
+		Location:      msg.Label,
+	}
+	saveBatch, err := h.txHandler.SaveBatch(ctx, reqCtx, batch)
 	if err != nil {
 		slog.ErrorContext(ctx, "[WeCom] 账单存盘失败", "userID", userID, "err", err)
 		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "❌ **账单保存失败**\n> "+err.Error()))
 		return
 	}
+
 	//4.组装数据，通过外部 YAML 模板渲染出 MessageRequest！
+	replyData := reporter.BuildReplyData(saveBatch, h.publicURL, msg.PicURL)
 
-	data := map[string]any{
-		"Title":    "记账成功",
-		"Summary":  summary,
-		"JumpURL":  h.publicURL,
-		"ImageURL": msg.PicURL,
-	}
-	slog.DebugContext(ctx, "Msg", "data", data)
-
-	cardMsg, err := template.Render[MessageRequest](h.templateDir, h.successTemplate, data)
+	cardMsg, err := template.Render[MessageRequest](h.templateDir, h.successTemplate, replyData)
 	if err != nil {
-		slog.ErrorContext(ctx, "[WeCom] 渲染程工模板失败", "err", err)
+		slog.ErrorContext(ctx, "[WeCom] 渲染模板失败", "err", err)
+
 		return
 	}
 
 	//可删区域，debug用
 
-	jsonBytes, _ := json.Marshal(cardMsg)
-	slog.InfoContext(ctx, "👉 最终发给企微的完整请求体", "payload", string(jsonBytes))
+	// , _ := json.Marshal(cardMsg)
+	// slog.InfoContext(ctx, "👉 最终发给企微的完整请求体", "payload", string(jsonBytes))
 
 	// 5. 补上接收人并发送
 	cardMsg.ToUser = userID

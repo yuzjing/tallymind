@@ -165,49 +165,52 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 // buildSystemPrompt 动态生成 Prompt，传入当前日期供 AI 参考
 func buildSystemPrompt() string {
 	today := time.Now().Format("2006-01-02")
-	year := today[:4] // 当前年份，如 2026
+	year := today[:4]
 
-	return fmt.Sprintf(`你是一个专业的财务记账与多模态账单提取专家。
-任务：无论用户发送的是自然语言描述，还是【单笔小票/账单流水列表/支付截图/发票】，请提取图片或文字中可见的所有交易记录，输出标准 JSON。
-今日参考基准日期为：%[1]s。
+	return fmt.Sprintf(`你是一个专业的全模态财务记账助手。将用户发送的文本、语音、账单小票/发票截图提取为标准 Beancount JSON 数据。今日基准日期：%[1]s。
 
-【核心提取指南】：
-1. 账单流水列表扫描：
-   - 仔细识别图片中的所有商户名、日期时间与金额。
-   - 若图片包含多条流水记录（如微信/支付宝/京东账单），请将可见的每一笔记录都独立提取为一个交易对象加入 transactions 数组。
-   - 符号处理："-10.00" 或 "支出 10.00" 代表支出 (amount: 10.0, type: "expense")；"+19.90" 或 "退款" 代表退款/收入 (amount: 19.9, type: "refund" 或 "income")。amount 必须为正数绝对值。
-2. 字段规范：
-   - date: 格式 YYYY-MM-DD。若图片显示"08-17"，结合基准年份推算为 "%[2]s-08-17"；若无日期则设为 ""。
-   - payee: 商户/收款方（如"奈雪的茶"、"京东"、"盒马"）。
-   - narration: 消费明细/商品备注（如"茶饮"、"数码配件"）。
-   - category: 标准层级科目（如 Expenses:Food:Drinks, Expenses:Shopping:Online, Expenses:Food:Dining, Expenses:Transport:Taxi）。
-   - account: 付款账户（如 Assets:WeChat, Assets:Alipay），未知填 ""。
+【核心提取原则】：
+1. amount: 实付金额绝对值（必须 > 0，退款/收入亦为正数，无有效交易返回 {"transactions": []}）；currency: 默认 "CNY"，见外币符号精准提取(如 USD, JPY)。
+2. date: YYYY-MM-DD，结合今日(%[1]s)推算相对日期，未提及设为 ""。
+3. payee: 店铺/商户/机构名称；narration: 商品明细或备注说明；type: "expense"(支出), "income"(收入), "refund"(退款)。
+4. category: Beancount 科目，日常以 Expenses: 或 Income: 开头（如 Expenses:Food:Drinks）；期初建账/初始资金注入使用 Equity:Opening-Balances。
+5. account: 资金结算账户，以 Assets: 或 Liabilities: 开头（如 Assets:WeChat:Wallet, Liabilities:Alipay:Huabei，银行卡用大写英文缩写如 Liabilities:CreditCard:CMB, Assets:Bank:ICBC，无依据设为 ""）。
+6. tags: 字符串数组。提取特征标签（如周期扣费 "#recurring"、待报销 "#reimbursement"、特定场景如 "#medical"、"#renovation" 等），无特征设为 []。
+7. metadata (无依据设为 ""):
+   - owner: 实际消费归属人 (如 "wife", "husband"，默认 "")。
+   - beneficiary: 实际受益人 (如 "baby", "parents", "wife", "family"，自由推断)。
+   - invoice_status: 电子发票填 "done"，需开票/待报销填 "pending"。
+   - original_amount / discount_amount: 原价与优惠减免金额。
+   - time / location / link: 小票具体时间(HH:MM:SS)、分店地点、订单流水号。
 
 【输出 JSON 示例】：
 {
   "transactions": [
     {
-      "amount": 10.00,
+      "amount": 4.00,
+      "currency": "CNY",
       "date": "%[1]s",
-      "payee": "奈雪的茶",
-      "narration": "茶饮消费",
+      "payee": "蜜雪冰城(中关村店)",
+      "narration": "冰鲜柠檬水",
       "category": "Expenses:Food:Drinks",
-      "account": "Assets:WeChat",
-      "type": "expense"
-    },
-    {
-      "amount": 19.90,
-      "date": "%[1]s",
-      "payee": "京东商城平台商户",
-      "narration": "退款",
-      "category": "Income:Refund",
-      "account": "Assets:WeChat",
-      "type": "refund"
+      "account": "Assets:WeChat:Wallet",
+      "type": "expense",
+      "tags": [],
+      "metadata": {
+        "owner": "husband",
+        "beneficiary": "",
+        "invoice_status": "",
+        "original_amount": "6.00",
+        "discount_amount": "2.00",
+        "time": "14:20:00",
+        "location": "中关村店",
+        "link": "20260824001"
+      }
     }
   ]
 }
 
-【要求】：只输出合法的 JSON 对象，不包含任何 markdown 代码块标记或额外废话。`, today, year)
+【要求】：只输出合法 JSON 对象，不含任何 Markdown 标记或多余废话。`, today, year)
 }
 
 type Client struct {
@@ -295,12 +298,12 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 
 	reqBytes, err := json.Marshal(reqPayload)
 
-	// 看看发给大模型的数据结构长啥样 (截取前 1000 个字符，防止 Base64 刷屏)
-	preview := string(reqBytes)
-	if len(preview) > 3000 {
-		preview = preview[:3000] + "...[后面太长已截断]"
-	}
-	slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
+	// // 看看发给大模型的数据结构长啥样 (截取前 1000 个字符，防止 Base64 刷屏)
+	// preview := string(reqBytes)
+	// if len(preview) > 3000 {
+	// 	preview = preview[:3000] + "...[后面太长已截断]"
+	// }
+	// slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
 
 	if err != nil {
 		return nil, fmt.Errorf("构造 LLM 请求失败: %w", err)
@@ -326,7 +329,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	respBytes, err := io.ReadAll(resp.Body)
 
 	// 看看接口返回的原始未清洗文本到底是什么
-	slog.WarnContext(ctx, "📥【原始响应】谷歌 API 返回的完整原始文本", "raw_resp", string(respBytes))
+	slog.DebugContext(ctx, "📥【原始响应】谷歌 API 返回的完整原始文本", "raw_resp", string(respBytes))
 
 	if err != nil {
 		return nil, fmt.Errorf("读取 LLM 响应失败: %w", err)

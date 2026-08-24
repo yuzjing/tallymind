@@ -9,6 +9,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"tallymind/internal/ledger"
 	"tallymind/internal/llm" // 直接组合 llm 包的 Config
 )
 
@@ -42,16 +43,6 @@ type AppConfig struct {
 	PublicURL   string // 应用基础 URL
 }
 
-// LedgerConfig 账本配置
-type LedgerConfig struct {
-	FilePath         string
-	DefaultCurrency  string
-	DefaultReporter  string
-	FallbackCategory string
-	FallbackAccount  string
-	FallbackPayee    string
-}
-
 // WeComConfig 企业微信配置
 type WeComConfig struct {
 	// 1. 企微自建应用 / 主动推送 / HTTP 回调凭证
@@ -71,7 +62,7 @@ type WeComConfig struct {
 // Config 全局顶层配置结构体 (模块化子结构体设计)
 type Config struct {
 	App    AppConfig
-	Ledger LedgerConfig
+	Ledger ledger.Config
 	LLM    llm.Config
 	WeCom  WeComConfig
 }
@@ -108,7 +99,7 @@ func Load() *Config {
 			TemplateDir: cmp.Or(os.Getenv("TEMPLATE_DIR"), "templates"),
 			PublicURL:   cmp.Or(os.Getenv("PUBLIC_URL"), "http://localhost:8080"),
 		},
-		Ledger: LedgerConfig{
+		Ledger: ledger.Config{
 			FilePath:         os.Getenv("BEANCOUNT_FILE_PATH"),
 			DefaultCurrency:  cmp.Or(os.Getenv("DEFAULT_CURRENCY"), "CNY"),
 			DefaultReporter:  cmp.Or(os.Getenv("DEFAULT_REPORTER"), "Unknown"),

@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"tallymind/internal/config"
 	"tallymind/internal/ledger"
+
+	"time"
+
+	"tallymind/internal/reporter"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,10 +25,10 @@ type APIResponse struct {
 }
 
 type TransactionHandler struct {
-	cfg config.LedgerConfig
+	cfg ledger.Config
 }
 
-func NewTransactionHandler(ledgerCfg config.LedgerConfig) *TransactionHandler {
+func NewTransactionHandler(ledgerCfg ledger.Config) *TransactionHandler {
 	return &TransactionHandler{cfg: ledgerCfg}
 }
 
@@ -48,12 +51,9 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 
 	// 组装请求体传输层上下文
 	reqCtx := ledger.RequestContext{
-		UserID:           userID,
-		Reporter:         userID,
-		SourceChannel:    sourceChannel,
-		DefaultCurrency:  h.cfg.DefaultCurrency,
-		FallbackCategory: h.cfg.FallbackCategory,
-		FallbackAccount:  h.cfg.FallbackAccount,
+		UserID:        userID,
+		SourceChannel: sourceChannel,
+		MessageTime:   time.Now(),
 	}
 
 	// Gin 的极简 JSON 绑定与自动校验
@@ -67,7 +67,7 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 		return
 	}
 	// 调用 ledger 处理函数
-	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, req, reqCtx); err != nil {
+	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, &req, h.cfg, reqCtx); err != nil {
 		slog.Error("账单写入失败", "err", err)
 		c.JSON(http.StatusBadRequest, APIResponse{
 			Code:    400,
@@ -77,41 +77,32 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 	}
 
 	//生成详细的友情摘要卡片 (包含日期、商户、备注、金额、分类、账户)
-	summaryText := req.ToSummaryString()
+	replyData := reporter.BuildReplyData(&req, "", "")
 
-	// 返回成功响应
-	slog.Info("通用 API 成功记账", "user", userID, "channel", sourceChannel, "summary", summaryText)
+	slog.Info("通用 API 成功记账", "user", userID, "channel", sourceChannel, "headline", replyData.SummaryHeadline())
 	c.JSON(http.StatusOK, APIResponse{
 		Code:    0,
-		Message: summaryText,
+		Message: replyData.SummaryHeadline(), // 或者用 replyData.SummaryText (包含逐行小票)
 		Data: gin.H{
-			"count":   len(req.Transactions),
+			"count":   replyData.Count,
+			"total":   replyData.TotalAmount,
 			"user":    userID,
 			"channel": sourceChannel,
-			"details": req.Transactions, // 同时也把原生数组塞进 Data 里
+			"details": req.Transactions,
 		},
 	})
 }
 
-func (h *TransactionHandler) SaveBatch(ctx context.Context, userID string, sourceChannel string, batch *ledger.BatchTransactions) (string, error) {
+func (h *TransactionHandler) SaveBatch(ctx context.Context, reqCtx ledger.RequestContext, batch *ledger.BatchTransactions) (*ledger.BatchTransactions, error) {
 	if batch == nil || len(batch.Transactions) == 0 {
-		return "", fmt.Errorf("交易批次为空，无需存盘")
+		return nil, fmt.Errorf("交易批次为空，无需存盘")
 	}
 
-	// 存盘上下文在 transaction.go 内部组装
-	reqCtx := ledger.RequestContext{
-		UserID:           userID,
-		Reporter:         userID,
-		SourceChannel:    sourceChannel,
-		DefaultCurrency:  h.cfg.DefaultCurrency,
-		FallbackCategory: h.cfg.FallbackCategory,
-		FallbackAccount:  h.cfg.FallbackAccount,
-	}
-	batch.EnsureDefaults(reqCtx)
+	// 存盘上下文在 transaction.go
 
-	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, *batch, reqCtx); err != nil {
-		return "", fmt.Errorf("保存交易批次失败: %w", err)
+	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, batch, h.cfg, reqCtx); err != nil {
+		return nil, fmt.Errorf("保存交易批次失败: %w", err)
 	}
 
-	return batch.ToSummaryString(), nil
+	return batch, nil
 }
