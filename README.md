@@ -20,6 +20,8 @@
 - **Dynamic YAML Template Engine**: Decouples UI presentation from backend code; templates support runtime hot-reloading on the host without container restarts.
 - **Hexagonal Architecture**: Isolates the core accounting domain from inbound webhooks and outbound messaging adapters.
 - **Dual-Client Compatibility**: Automatically formats messages for both Enterprise WeChat and Personal WeChat (via WeChat Work Plugin).
+- **Multi-LLM Load Balancing & Failover**: Automatic fallback across multiple AI providers / API keys on rate limits (HTTP 429) or network errors.
+- **Unified YAML Configuration**: Centralized management for WeCom webhooks, LLM pools, and Beancount parameters.
 
 ---
 
@@ -43,41 +45,11 @@
 
 ## ⚡ Quick Start
 
-### 1. Configuration (`.env`)
+### 1. Configuration 
 
-```env
-# Server
-APP_ENV=production
-LOG_LEVEL=info
-SERVER_PORT=8080
-PUBLIC_URL=your_public_url
-TEMPLATE_DIR=templates
-
-# Features
-ENABLE_HTTP_API=true
-ENABLE_LLM=true
-ENABLE_WECOM_HTTP=true
-ENABLE_REPORTER=false
-
-# LLM (OpenAI-Compatible)
-LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4
-
-# WeCom Credentials
-WECOM_CORP_ID=ww_your_corpid
-WECOM_AGENT_ID=1000002
-WECOM_SECRET=your_app_secret
-WECOM_TOKEN=your_callback_token
-WECOM_ENCODING_AES_KEY=your_43_chars_encoding_aes_key
-WECOM_EXPENSE_TEMPLATE=wecom/expense_success.yaml
-
-# Ledger Storage
-BEANCOUNT_FILE_PATH=data/2026.bean
-DEFAULT_CURRENCY=CNY
-DEFAULT_REPORTER=User
-FALLBACK_CATEGORY=Expenses:Uncategorized
-FALLBACK_ACCOUNT=Assets:Pending:Unknown
+```bash
+cp config.example.yaml config.yaml
+vim config.yaml
 ```
 
 ### 2. Run Container
@@ -85,11 +57,11 @@ FALLBACK_ACCOUNT=Assets:Pending:Unknown
 ```bash
 podman run -d \
   --name tallymind \
-  --restart always \
+  --restart unless-stopped \
   -p 8080:8080 \
-  -v ./data:/app/data \
-  -v ./templates:/app/templates:ro \
-  --env-file .env \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
   ghcr.io/yuzjing/tallymind:latest
 ```
 

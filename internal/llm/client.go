@@ -147,13 +147,14 @@ func buildSystemPrompt() string {
 
 func NewClient(cfg Config) (*Client, error) {
 	// 1. 必填配置校验：统一使用 fmt.Errorf 抛出明确错误
-	if len(cfg.Providers) == 0 {
-		return nil, fmt.Errorf("LLM 配置错误: providers 列表不能为空")
+	pool, err := NewProviderPool(cfg.Providers)
+	if err != nil {
+		return nil, fmt.Errorf("初始化 LLM 提供商池失败: %w", err)
 	}
 
 	return &Client{
 		cfg:          cfg,
-		providerPool: NewProviderPool(cfg.Providers),
+		providerPool: pool,
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second, // 20 秒超时控制
 		},
@@ -162,7 +163,8 @@ func NewClient(cfg Config) (*Client, error) {
 
 func (c *Client) ParseTransaction(ctx context.Context, userText string, attachments ...Attachment) (*ledger.BatchTransactions, error) {
 	trimmedText := strings.TrimSpace(userText)
-	// 1. 组装多模态
+
+	// 1. 组装多模态媒体部分
 	var mediaParts []ContentPart
 	for _, att := range attachments {
 		if strings.TrimSpace(att.URL) == "" {
@@ -176,43 +178,52 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 
 		mediaParts = append(mediaParts, ContentPart{
 			Type:     "image_url",
-			ImageURL: &ImageURL{URL: dataURI}, // 使用 Data URI 转码后的 URL
+			ImageURL: &ImageURL{URL: dataURI},
 		})
-
 	}
-	// 2. 一次性前置拦截：如果既没有用户文本，也没有任何成功转码的媒体附件，直接退出！
 
+	// 2. 前置防御拦截：既无文本也无有效附件
 	if trimmedText == "" && len(mediaParts) == 0 {
 		return nil, fmt.Errorf("未提供任何有效的账单文本或多模态附件")
 	}
+
 	// 3. 动态组装提示词
-
 	promptText := "请仔细分析传入的信息，识别提取出所有的消费记账明细。"
-
-	if strings.TrimSpace(userText) != "" {
-		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", strings.TrimSpace(userText))
+	if trimmedText != "" {
+		promptText = fmt.Sprintf("请分析传入的信息。用户的补充说明：%s", trimmedText)
 	}
 
-	// 4. 一次性将文本与媒体合并到 part
-
+	// 4. 合并组装 Parts
 	parts := make([]ContentPart, 0, len(mediaParts)+1)
 	parts = append(parts, ContentPart{Type: "text", Text: promptText})
 	parts = append(parts, mediaParts...)
-	slog.DebugContext(ctx, "[LLM] 准备发起多模态请求",
-		"model", provider.Model,
-		"parts_count", len(parts),
-		"user_text", userText)
 
-	// 5. 核心容灾重试循环：基于 ProviderPool 动态切换服务商与 Key
+	poolSize := c.providerPool.PoolSize()
+	if poolSize == 0 {
+		return nil, fmt.Errorf("LLM: 无可用的 Provider 服务商")
+	}
+
+	slog.DebugContext(ctx, "[LLM] 准备发起多模态请求",
+		"parts_count", len(parts),
+		"user_text", trimmedText,
+		"pool_size", poolSize)
+
+	// 5. 核心容灾重试循环：基于 ProviderPool 轮询与故障转移
 	var respBytes []byte
 	var lastErr error
 
-	for attempt := 0; attempt < len(c.providerPool.providers); attempt++ {
-		provider, ok := c.providerPool.NextAPIKey()
+	for range poolSize {
+		// 快速响应 Context 取消/超时
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("LLM 请求已取消或超时: %w", err)
+		}
+
+		provider, ok := c.providerPool.NextProvider()
 		if !ok {
+			lastErr = fmt.Errorf("无法从池中获取有效 Provider")
 			break
 		}
-		//  组装 ChatRequest
+
 		reqPayload := ChatRequest{
 			Model: provider.Model,
 			Messages: []ChatMessage{
@@ -228,21 +239,15 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		}
 
 		reqBytes, err := json.Marshal(reqPayload)
-
-		// // 看看发给大模型的数据结构长啥样 (截取前 1000 个字符，防止 Base64 刷屏)
-		// preview := string(reqBytes)
-		// if len(preview) > 3000 {
-		// 	preview = preview[:3000] + "...[后面太长已截断]"
-		// }
-		// slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
-
 		if err != nil {
-			return nil, fmt.Errorf("构造 LLM 请求失败: %w", err)
+			return nil, fmt.Errorf("序列化 LLM 请求体失败: %w", err)
 		}
 
-		// 构造 HTTP POST 请求
-		apiURL := fmt.Sprintf("%s/chat/completions", provider.BaseURL)
-		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBytes))
+		// 规范化 URL 拼接，防止尾部斜杠导致 double slash
+		baseURL := strings.TrimRight(provider.BaseURL, "/")
+		apiURL := fmt.Sprintf("%s/chat/completions", baseURL)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(reqBytes))
 		if err != nil {
 			return nil, fmt.Errorf("创建 HTTP 请求失败: %w", err)
 		}
@@ -250,70 +255,79 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
 
-		// 发起http请求
+		// 执行请求
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("调用  [%s] LLM API 网络异常: %w", provider.Model, err)
+			lastErr = fmt.Errorf("调用 [%s] 网络异常: %w", provider.Model, err)
+			slog.WarnContext(ctx, "[LLM] 网络请求失败，尝试切换下一个 Provider", "model", provider.Model, "err", err)
 			continue
 		}
-		respBytes, err = io.ReadAll(resp.Body)
 
-		resp.Body.Close()
-		// 遇到 429 限流或 403 权限/配额问题，自动切换下一个提供商/Key 重试！
+		// 读取响应体并确保安全关闭
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 
+		if readErr != nil {
+			lastErr = fmt.Errorf("读取 [%s] 响应体失败: %w", provider.Model, readErr)
+			continue
+		}
+
+		// 非 200 状态码统一处理并打印原始错误信息
 		if resp.StatusCode != http.StatusOK {
-			slog.WarnContext(ctx, "[LLM] API 返回非 200 状态码，自动切换备用服务商/Key",
+			slog.WarnContext(ctx, "[LLM] API 返回非 200 状态码，准备容灾切换",
 				"status", resp.StatusCode,
 				"model", provider.Model,
+				"error_body", string(body), // 关键：记录上游返回的具体错误原因
 			)
-			lastErr = fmt.Errorf("provider [%s] rate limited (HTTP %d)", provider.Model, resp.StatusCode)
-			time.Sleep(100 * time.Millisecond)
-			continue // 👈 切换下一个重试
-		}
+			lastErr = fmt.Errorf("provider [%s] 请求失败 (HTTP %d): %s", provider.Model, resp.StatusCode, string(body))
 
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("provider [%s] failed (HTTP %d)", provider.Model, resp.StatusCode)
+			// 遇到限流或异常时略作退避，但仍监听 Context
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 			continue
 		}
 
-		// 成功，清空错误跳出重试
+		// 请求成功
+		respBytes = body
 		lastErr = nil
 		break
 	}
 
 	if lastErr != nil {
-		return nil, fmt.Errorf("所有大模型服务商均调用失败: %w", lastErr)
+		return nil, fmt.Errorf("所有 LLM 服务商重试后均失败: %w", lastErr)
 	}
-	// 看看接口返回的原始未清洗文本到底是什么
-	slog.DebugContext(ctx, "📥【原始响应】API 返回的完整原始文本", "raw_resp", string(respBytes))
 
-	// 9. 解包 OpenAI 响应
+	slog.DebugContext(ctx, "📥 [LLM] API 响应成功", "raw_resp_len", len(respBytes))
+
+	// 6. 解包 OpenAI 响应
 	var chatResp ChatCompletionResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return nil, fmt.Errorf("解析 LLM 响应 JSON 失败: %w", err)
+		return nil, fmt.Errorf("解析 LLM 响应 JSON 失败: %w, raw: %s", err, string(respBytes))
 	}
 
 	if chatResp.Error != nil && chatResp.Error.Message != "" {
-		return nil, fmt.Errorf("LLM API 报错: %s", chatResp.Error.Message)
+		return nil, fmt.Errorf("LLM API 返回业务错误: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
 		return nil, fmt.Errorf("LLM API 未返回任何有效的 Choice 结果")
 	}
 
-	// 10. 提取 AI 吐出的 JSON 文本并清洗可能的 Markdown 杂质
+	// 7. 提取 AI 生成的文本并清洗 Markdown 杂质
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	content = cleanMarkdownJSON(content)
 
-	// 11. 第二次反序列化：转换为 Go 的 ledger.BatchTransactions 结构体
+	// 8. 映射为领域记账模型
 	var batch ledger.BatchTransactions
 	if err := json.Unmarshal([]byte(content), &batch); err != nil {
-		slog.Error("LLM 返回文本无法解析为 BatchTransactions", "raw_content", content, "err", err)
+		slog.ErrorContext(ctx, "LLM 返回文本无法解析为 BatchTransactions", "raw_content", content, "err", err)
 		return nil, fmt.Errorf("AI 提取的数据无法转为合规账单: %w", err)
 	}
 
-	slog.DebugContext(ctx, "[LLM] 大模型提取完成",
-		"raw_json", content,
+	slog.DebugContext(ctx, "[LLM] 账单解析完成",
 		"transaction_count", len(batch.Transactions))
 
 	return &batch, nil

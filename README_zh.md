@@ -20,6 +20,8 @@
 - **动态 YAML 模板渲染引擎**：消息视图层与业务逻辑彻底解耦，在宿主机直接修改 YAML 模板即可**秒级热更新**，无需重新构建容器镜像。
 - **六边形解耦架构**：严格隔离“消息入站接收”、“核心账本领域模型”与“出站分发渠道”，各组件高内聚、低耦合。
 - **微信 / 企微全兼容**：自适应处理企业微信与个人微信（微工作台）消息排版差异，避免消息格式兼容性拦截。
+- **多 LLM 负载均衡与自动容灾**：支持配置多个大模型服务商或同平台多 Key，遭遇 `429 限流` 或网络波动时秒级自动故障转移（Failover）。
+- **统一 YAML 驱动**：使用 `config.yaml` 统一管理应用开关、企微回调、大模型池及 Beancount 账本参数。
 
 ---
 
@@ -45,18 +47,18 @@
 
 ### 1. 配置文件 (`.env`)
 
-参考 [英文版配置说明](README.md#1-configuration-env)，在部署目录下配置对应的 API 凭证、企微参数与账本文件路径。
+参考 [英文版配置说明](README.md#1-configuration)，在部署目录下配置对应的 API 凭证、企微参数与账本文件路径。
 
 ### 2. 容器启动
 
 ```bash
 podman run -d \
   --name tallymind \
-  --restart always \
+  --restart unless-stopped \
   -p 8080:8080 \
-  -v ./data:/app/data \
-  -v ./templates:/app/templates:ro \
-  --env-file .env \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
   ghcr.io/yuzjing/tallymind:latest
 ```
 

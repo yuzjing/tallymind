@@ -2,7 +2,6 @@
 package llm
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -94,34 +93,37 @@ type ProviderPool struct {
 }
 
 // NewProviderPoolFromConfig 从 Config 中自动构建 ProviderPool (支持逗号分隔的多个 Key)
-func NewProviderPool(rawJSON string) (*ProviderPool, error) {
+func NewProviderPool(providers []Provider) (*ProviderPool, error) {
 
-	if strings.TrimSpace(rawJSON) == "" {
-		return nil, fmt.Errorf("LLM 配置错误: LLM_PROVIDERS 不能为空")
-	}
-	var providers []Provider
-	if err := json.Unmarshal([]byte(rawJSON), &providers); err != nil {
-		return nil, fmt.Errorf("解析 LLM_PROVIDERS JSON 失败: %w", err)
-	}
+	var valid []Provider
+	for _, p := range providers {
+		// 清理首尾空格
+		p.APIKey = strings.TrimSpace(p.APIKey)
+		p.BaseURL = strings.TrimSpace(p.BaseURL)
+		p.Model = strings.TrimSpace(p.Model)
 
-	for _, k := range rawKeys {
-		if k = strings.TrimSpace(k); k != "" {
-			providers = append(providers, Provider{
-				APIKey:  k,
-				BaseURL: cfg.BaseURL,
-				Model:   cfg.Model,
-			})
+		// 过滤无效配置
+		if p.APIKey != "" && p.BaseURL != "" {
+			valid = append(valid, p)
 		}
 	}
-	return &ProviderPool{providers: providers}
+
+	if len(valid) == 0 {
+		return nil, fmt.Errorf("llm: 没有可用的 Provider 配置")
+	}
+
+	return &ProviderPool{
+		providers: valid,
+	}, nil
 }
 
-func (p *ProviderPool) NextAPIKey() (Provider, bool) {
+func (p *ProviderPool) NextProvider() (Provider, bool) {
 	if len(p.providers) == 0 {
 		return Provider{}, false
 	}
 	idx := p.index.Add(1)
-	return p.providers[int(idx)%len(p.providers)], true
+	target := p.providers[uint32(idx)%uint32(len(p.providers))]
+	return target, true
 }
 
 func (p *ProviderPool) PoolSize() int {
