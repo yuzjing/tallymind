@@ -1,7 +1,7 @@
 msgtype: "text"
 text:
   content: {{ if .IsSingle }}
-    {{ printf "👌 已记好：%s ￥%.2f (%s)\n━━━━━━━━━━━━━━━━━━\n<a href=\"%s\">🧾 点击查看账单详情与小票 ›</a>" .PrimaryName .FirstItem.Amount .PrimaryCategory .JumpURL | quote }}
+    {{ printf "🌿 记账成功\n──────────────\n金额：￥%.2f (%s)\n项目：%s\n日期：%s\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>" .FirstItem.Amount .PrimaryCategory .PrimaryName .FirstItem.Date .JumpURL | quote }}
   {{ else }}
-    {{ printf "👌 已记好：共计入 %d 笔账单，合计 ￥%.2f\n━━━━━━━━━━━━━━━━━━\n<a href=\"%s\">🧾 查看这 %d 笔明细与小票 ›</a>" .Count .TotalAmount .JumpURL .Count | quote }}
+    {{ printf "🌿 记账成功 (共 %d 笔)\n──────────────\n合计：￥%.2f\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>" .Count .TotalAmount .JumpURL | quote }}
   {{ end }}

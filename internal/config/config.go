@@ -2,190 +2,107 @@
 package config
 
 import (
-	"cmp"
+	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
-	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 
+	"cmp"
 	"tallymind/internal/ledger"
-	"tallymind/internal/llm" // 直接组合 llm 包的 Config
+	"tallymind/internal/llm"
 )
 
 // AppConfig 基础服务配置
 type AppConfig struct {
-	Env      string // "development" / "production"
-	Debug    bool   // true / false
-	LogLevel string // "debug" / "info" / "warn" / "error"
-	LogDir   string // 日志文件路径
-	Port     string // 监听端口
+	Env               string `yaml:"env"`                 // "development" / "production"
+	Debug             bool   `yaml:"debug"`               // true / false
+	LogLevel          string `yaml:"log_level"`           // "debug" / "info" / "warn" / "error"
+	LogDir            string `yaml:"log_dir"`             // 日志输出目录
+	Port              string `yaml:"port"`                // 监听端口
+	ReceiptSignSecret string `yaml:"receipt_sign_secret"` // 小票签名密钥
+	TemplateDir       string `yaml:"template_dir"`        // 模板目录路径
+	PublicURL         string `yaml:"public_url"`          // 应用外部公网主域名
 
 	// 1. 通道独立开关
-	EnableWeComWSS  bool // 是否开启企微 WSS 长连接服务
-	EnableWeComHTTP bool // 是否开启企微自建应用 HTTP 回调与主动推送服务
-	EnableHTTPAPI   bool // 是否开启通用 HTTP API 接口
+	EnableWeComWSS  bool `yaml:"enable_wecom_wss"`  // 是否开启企微 WSS 长连接服务
+	EnableWeComHTTP bool `yaml:"enable_wecom_http"` // 是否开启企微 HTTP 回调与主动推送服务
+	EnableHTTPAPI   bool `yaml:"enable_http_api"`   // 是否开启通用 HTTP API 接口
 
 	// 2. 核心 AI 开关
-	EnableLLM bool // 是否开启 AI 大模型自然语言解析
+	EnableLLM bool `yaml:"enable_llm"` // 是否开启大模型自然语言解析
 
 	// 3. Git 自动 commit 备份配置
-	EnableGitBackup bool   // 是否开启本地账本 Git 自动备份
-	GitBackupCron   string // 备份定时表达式，默认每 6 小时 "0 */6 * * *"
+	EnableGitBackup bool   `yaml:"enable_git_backup"` // 是否开启本地账本 Git 自动备份
+	GitBackupCron   string `yaml:"git_backup_cron"`   // 备份定时表达式 (如 "0 */6 * * *")
 
-	// 4. 定时报表与任务配置
-	EnableReporter bool // 是否开启定时报表推送总开关
-	ReportChannels []string
-	AlertChannels  []string
-
-	//5. 消息模板
-	TemplateDir string // 模板目录路径
-	PublicURL   string // 应用基础 URL
+	// 4. 定时报表与通道配置
+	EnableReporter bool     `yaml:"enable_reporter"` // 是否开启定时报表推送总开关
+	ReportChannels []string `yaml:"report_channels"` // 报表目标渠道切片 (如 ["wecom"])
+	AlertChannels  []string `yaml:"alert_channels"`  // 告警目标渠道切片
 }
 
 // WeComConfig 企业微信配置
 type WeComConfig struct {
 	// 1. 企微自建应用 / 主动推送 / HTTP 回调凭证
-	CorpID         string // 企业 ID (corpid)
-	AgentID        int64  // 自建应用 ID (agentid)
-	Secret         string // 自建应用 Secret
-	Token          string // 消息回调 Token
-	EncodingAESKey string // 消息加解密 EncodingAESKey
+	CorpID          string `yaml:"corp_id"`
+	AgentID         int64  `yaml:"agent_id"`
+	Secret          string `yaml:"secret"`
+	Token           string `yaml:"token"`
+	EncodingAESKey  string `yaml:"encoding_aes_key"`
+	SuccessTemplate string `yaml:"success_template"`
+	FailureTemplate string `yaml:"failure_template"`
 
 	// 2. 企微 API 模式机器人 (WSS 长连接专有)
-	BotID           string
-	BotSecret       string
-	SuccessTemplate string
-	FailureTemplate string
+	BotID     string `yaml:"bot_id"`
+	BotSecret string `yaml:"bot_secret"`
 }
 
-// Config 全局顶层配置结构体 (模块化子结构体设计)
+// Config 全局顶层配置结构体
 type Config struct {
-	App    AppConfig
-	Ledger ledger.Config
-	LLM    llm.Config
-	WeCom  WeComConfig
+	App    AppConfig     `yaml:"app"`
+	Ledger ledger.Config `yaml:"ledger"`
+	LLM    llm.Config    `yaml:"llm"`
+	WeCom  WeComConfig   `yaml:"wecom"`
 }
 
-// Load 从环境变量中加载全部配置
-func Load() *Config {
-	_ = godotenv.Load()
-
-	return &Config{
-		App: AppConfig{
-			Env:      cmp.Or(os.Getenv("APP_ENV"), "development"),
-			Debug:    getEnvBool("DEBUG", false),
-			LogLevel: cmp.Or(os.Getenv("LOG_LEVEL"), "info"),
-			LogDir:   cmp.Or(os.Getenv("LOG_DIR"), ""), // 默认日志目录
-			Port:     cmp.Or(os.Getenv("SERVER_PORT"), "8080"),
-
-			// 通道独立开关
-			EnableWeComWSS:  getEnvBool("ENABLE_WECOM_WSS", false), // 默认开启 WSS 长连接
-			EnableWeComHTTP: getEnvBool("ENABLE_WECOM_HTTP", true),
-			EnableHTTPAPI:   getEnvBool("ENABLE_HTTP_API", true), // 默认开启 HTTP API
-
-			// AI 开关
-			EnableLLM: getEnvBool("ENABLE_LLM", false),
-
-			// Git 自动备份
-			EnableGitBackup: getEnvBool("ENABLE_GIT_BACKUP", true),
-			GitBackupCron:   cmp.Or(os.Getenv("GIT_BACKUP_CRON"), "0 */6 * * *"),
-
-			// 定时报表开关与 Cron
-			EnableReporter: getEnvBool("ENABLE_REPORTER", false),
-			ReportChannels: getEnvStringSlice("REPORTER_CHANNELS", []string{}),
-			AlertChannels:  getEnvStringSlice("ALERT_CHANNELS", []string{}),
-
-			TemplateDir: cmp.Or(os.Getenv("TEMPLATE_DIR"), "templates"),
-			PublicURL:   cmp.Or(os.Getenv("PUBLIC_URL"), "http://localhost:8080"),
-		},
-		Ledger: ledger.Config{
-			FilePath:         os.Getenv("BEANCOUNT_FILE_PATH"),
-			DefaultCurrency:  cmp.Or(os.Getenv("DEFAULT_CURRENCY"), "CNY"),
-			DefaultReporter:  cmp.Or(os.Getenv("DEFAULT_REPORTER"), "Unknown"),
-			FallbackCategory: cmp.Or(os.Getenv("FALLBACK_CATEGORY"), "Expenses:Uncategorized"),
-			FallbackAccount:  cmp.Or(os.Getenv("FALLBACK_ACCOUNT"), "Assets:Pending:Unknown"),
-			FallbackPayee:    cmp.Or(os.Getenv("FALLBACK_PAYEE"), "日常消费"),
-		},
-		LLM: llm.Config{
-			APIKey:           os.Getenv("LLM_API_KEY"),
-			BaseURL:          os.Getenv("LLM_BASE_URL"),
-			Model:            os.Getenv("LLM_MODEL"),
-			MaxTokens:        getEnvInt64("LLM_MAX_TOKENS", 4096),
-			Temperature:      getEnvFloat("LLM_TEMPERATURE", 0.2),
-			TopP:             getEnvFloat("LLM_TOP_P", 0.0),
-			FrequencyPenalty: getEnvFloat("LLM_FREQUENCY_PENALTY", 0.0),
-			PresencePenalty:  getEnvFloat("LLM_PRESENCE_PENALTY", 0.0),
-		},
-		WeCom: WeComConfig{
-			CorpID:          os.Getenv("WECOM_CORP_ID"),
-			AgentID:         getEnvInt64("WECOM_AGENT_ID", 0),
-			Secret:          os.Getenv("WECOM_SECRET"),
-			Token:           os.Getenv("WECOM_TOKEN"),
-			EncodingAESKey:  os.Getenv("WECOM_ENCODING_AES_KEY"),
-			SuccessTemplate: os.Getenv("WECOM_SUCCESS_TEMPLATE"),
-			FailureTemplate: os.Getenv("WECOM_FAILURE_TEMPLATE"),
-
-			// WSS 机器人凭证
-			BotID:     os.Getenv("WECOM_BOT_ID"),
-			BotSecret: os.Getenv("WECOM_BOT_SECRET"),
-		},
+// Load 直接读取并解析 YAML 配置文件
+func Load(configPath ...string) (*Config, error) {
+	path := "config.yaml"
+	if len(configPath) > 0 && configPath[0] != "" {
+		path = configPath[0]
 	}
-}
 
-// 辅助函数 1：读取 bool 类型环境变量
-func getEnvBool(key string, defaultVal bool) bool {
-	valStr := os.Getenv(key)
-	if valStr == "" {
-		return defaultVal
-	}
-	val, err := strconv.ParseBool(valStr)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return defaultVal
+		return nil, fmt.Errorf("读取配置文件 [%s] 失败: %w", path, err)
 	}
-	return val
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("解析 YAML 配置失败: %w", err)
+	}
+
+	// 默认值保底注入 (防止配置文件中某项未填)
+	setDefaults(&cfg)
+
+	return &cfg, nil
 }
 
-// 辅助函数 2：读取 int64 类型环境变量
-func getEnvInt64(key string, defaultVal int64) int64 {
-	valStr := os.Getenv(key)
-	if valStr == "" {
-		return defaultVal
-	}
-	val, err := strconv.ParseInt(valStr, 10, 64)
-	if err != nil {
-		return defaultVal
-	}
-	return val
-}
+// setDefaults 为未显式配置的字段提供安全默认值
+func setDefaults(cfg *Config) {
+	cfg.App.Env = cmp.Or(cfg.App.Env, "development")
+	cfg.App.LogLevel = cmp.Or(cfg.App.LogLevel, "info")
+	cfg.App.Port = cmp.Or(cfg.App.Port, "8080")
+	cfg.App.TemplateDir = cmp.Or(cfg.App.TemplateDir, "templates")
+	cfg.App.ReceiptSignSecret = cmp.Or(cfg.App.ReceiptSignSecret, "tallymind_default_secret_key")
 
-// 辅助函数 3：读取 float64 类型环境变量
-func getEnvFloat(key string, defaultVal float64) float64 {
-	valStr := os.Getenv(key)
-	if valStr == "" {
-		return defaultVal
-	}
-	val, err := strconv.ParseFloat(valStr, 64)
-	if err != nil {
-		return defaultVal
-	}
-	return val
-}
+	cfg.Ledger.FilePath = cmp.Or(cfg.Ledger.FilePath, "data/2026.bean")
+	cfg.Ledger.DefaultCurrency = cmp.Or(cfg.Ledger.DefaultCurrency, "CNY")
+	cfg.Ledger.DefaultReporter = cmp.Or(cfg.Ledger.DefaultReporter, "User")
+	cfg.Ledger.FallbackCategory = cmp.Or(cfg.Ledger.FallbackCategory, "Expenses:Uncategorized")
+	cfg.Ledger.FallbackAccount = cmp.Or(cfg.Ledger.FallbackAccount, "Assets:Pending:Unknown")
+	cfg.Ledger.FallbackPayee = cmp.Or(cfg.Ledger.FallbackPayee, "日常消费")
 
-// 辅助函数：从环境变量读取逗号分隔的字符串切片
-func getEnvStringSlice(key string, defaultVals []string) []string {
-	valStr := os.Getenv(key)
-	if strings.TrimSpace(valStr) == "" {
-		return defaultVals
-	}
-
-	parts := strings.Split(valStr, ",")
-	res := make([]string, 0, len(parts))
-	for _, p := range parts {
-		name := strings.TrimSpace(strings.ToLower(p))
-		if name != "" {
-			res = append(res, name)
-		}
-	}
-	return res
+	cfg.WeCom.SuccessTemplate = cmp.Or(cfg.WeCom.SuccessTemplate, "wecom/expense_success.yaml")
+	cfg.WeCom.FailureTemplate = cmp.Or(cfg.WeCom.FailureTemplate, "wecom/expense_fail.yaml")
 }

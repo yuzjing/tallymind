@@ -19,78 +19,10 @@ import (
 	"strings"
 )
 
-type Config struct {
-	APIKey           string
-	BaseURL          string
-	Model            string
-	MaxTokens        int64
-	Temperature      float64
-	TopP             float64
-	FrequencyPenalty float64
-	PresencePenalty  float64
-}
-
-// Attachment 通用媒体附件载体 (支持图片、文档、音频等)
-type Attachment struct {
-	Type     string `json:"type"`
-	URL      string `json:"url"`
-	MimeType string `json:"mime_type,omitempty"`
-}
-
-// openai 请求/响应标准体(多模态归一化)
-type ContentPart struct {
-	Type       string        `json:"type"`                  // "text" 或 "image_url"
-	Text       string        `json:"text,omitempty"`        // 当 type="text"
-	ImageURL   *ImageURL     `json:"image_url,omitempty"`   // 当 type="image_url"
-	InputAudio *AudioContent `json:"input_audio,omitempty"` // 语音记账 (预留)
-	File       *MediaURL     `json:"file,omitempty"`        // PDF 电子发票/文档 (预留)
-}
-
-// 通用媒体链接/DataURI载体 (图片、PDF 文件共用)
-type MediaURL struct {
-	URL string `json:"url"`
-}
-
-// 语音/音频消息载体 (兼容 OpenAI Audio 协议)
-type AudioContent struct {
-	Data   string `json:"data"`   // Base64 编码的音频原始数据
-	Format string `json:"format"` // 音频格式: "mp3", "wav", "amr"
-}
-
-type ImageURL struct {
-	URL string `json:"url"`
-}
-
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"` // 支持 string 或 []ContentPart
-}
-
-type ChatRequest struct {
-	Model            string          `json:"model"`
-	Messages         []ChatMessage   `json:"messages"`
-	Temperature      float64         `json:"temperature,omitempty"`
-	TopP             float64         `json:"top_p,omitempty"`
-	FrequencyPenalty float64         `json:"frequency_penalty,omitempty"`
-	PresencePenalty  float64         `json:"presence_penalty,omitempty"`
-	MaxTokens        int64           `json:"max_tokens,omitempty"`
-	ResponseFormat   *ResponseFormat `json:"response_format,omitempty"`
-}
-
-type ResponseFormat struct {
-	Type string `json:"type"`
-}
-
-type ChatCompletionResponse struct {
-	Choices []struct {
-		Message struct {
-			Role    string `json:"message"`
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-	Error *struct {
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+type Client struct {
+	cfg          Config
+	providerPool *ProviderPool
+	httpClient   *http.Client
 }
 
 // toDataURI 智能多媒体转码器 (支持：图片、PDF文档、音频、视频全部格式)
@@ -213,25 +145,15 @@ func buildSystemPrompt() string {
 【要求】：只输出合法 JSON 对象，不含任何 Markdown 标记或多余废话。`, today, year)
 }
 
-type Client struct {
-	cfg        Config
-	httpClient *http.Client
-}
-
 func NewClient(cfg Config) (*Client, error) {
 	// 1. 必填配置校验：统一使用 fmt.Errorf 抛出明确错误
-	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("LLM 配置错误: LLM_API_KEY 不能为空，请检查 .env 文件")
-	}
-	if strings.TrimSpace(cfg.BaseURL) == "" {
-		return nil, fmt.Errorf("LLM 配置错误: LLM_BASE_URL 不能为空，请检查 .env 文件")
-	}
-	if strings.TrimSpace(cfg.Model) == "" {
-		return nil, fmt.Errorf("LLM 配置错误: LLM_MODEL 不能为空，请检查 .env 文件")
+	if len(cfg.Providers) == 0 {
+		return nil, fmt.Errorf("LLM 配置错误: providers 列表不能为空")
 	}
 
 	return &Client{
-		cfg: cfg,
+		cfg:          cfg,
+		providerPool: NewProviderPool(cfg.Providers),
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second, // 20 秒超时控制
 		},
@@ -277,69 +199,93 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 	parts = append(parts, ContentPart{Type: "text", Text: promptText})
 	parts = append(parts, mediaParts...)
 	slog.DebugContext(ctx, "[LLM] 准备发起多模态请求",
-		"model", c.cfg.Model,
+		"model", provider.Model,
 		"parts_count", len(parts),
 		"user_text", userText)
 
-	// 5. 组装 ChatRequest
-	reqPayload := ChatRequest{
-		Model: c.cfg.Model,
-		Messages: []ChatMessage{
-			{Role: "system", Content: buildSystemPrompt()},
-			{Role: "user", Content: parts},
-		},
-		Temperature:      c.cfg.Temperature,
-		TopP:             c.cfg.TopP,
-		FrequencyPenalty: c.cfg.FrequencyPenalty,
-		PresencePenalty:  c.cfg.PresencePenalty,
-		MaxTokens:        c.cfg.MaxTokens,
-		ResponseFormat:   &ResponseFormat{Type: "json_object"},
+	// 5. 核心容灾重试循环：基于 ProviderPool 动态切换服务商与 Key
+	var respBytes []byte
+	var lastErr error
+
+	for attempt := 0; attempt < len(c.providerPool.providers); attempt++ {
+		provider, ok := c.providerPool.NextAPIKey()
+		if !ok {
+			break
+		}
+		//  组装 ChatRequest
+		reqPayload := ChatRequest{
+			Model: provider.Model,
+			Messages: []ChatMessage{
+				{Role: "system", Content: buildSystemPrompt()},
+				{Role: "user", Content: parts},
+			},
+			Temperature:      c.cfg.Temperature,
+			TopP:             c.cfg.TopP,
+			FrequencyPenalty: c.cfg.FrequencyPenalty,
+			PresencePenalty:  c.cfg.PresencePenalty,
+			MaxTokens:        c.cfg.MaxTokens,
+			ResponseFormat:   &ResponseFormat{Type: "json_object"},
+		}
+
+		reqBytes, err := json.Marshal(reqPayload)
+
+		// // 看看发给大模型的数据结构长啥样 (截取前 1000 个字符，防止 Base64 刷屏)
+		// preview := string(reqBytes)
+		// if len(preview) > 3000 {
+		// 	preview = preview[:3000] + "...[后面太长已截断]"
+		// }
+		// slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
+
+		if err != nil {
+			return nil, fmt.Errorf("构造 LLM 请求失败: %w", err)
+		}
+
+		// 构造 HTTP POST 请求
+		apiURL := fmt.Sprintf("%s/chat/completions", provider.BaseURL)
+		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBytes))
+		if err != nil {
+			return nil, fmt.Errorf("创建 HTTP 请求失败: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
+
+		// 发起http请求
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("调用  [%s] LLM API 网络异常: %w", provider.Model, err)
+			continue
+		}
+		respBytes, err = io.ReadAll(resp.Body)
+
+		resp.Body.Close()
+		// 遇到 429 限流或 403 权限/配额问题，自动切换下一个提供商/Key 重试！
+
+		if resp.StatusCode != http.StatusOK {
+			slog.WarnContext(ctx, "[LLM] API 返回非 200 状态码，自动切换备用服务商/Key",
+				"status", resp.StatusCode,
+				"model", provider.Model,
+			)
+			lastErr = fmt.Errorf("provider [%s] rate limited (HTTP %d)", provider.Model, resp.StatusCode)
+			time.Sleep(100 * time.Millisecond)
+			continue // 👈 切换下一个重试
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("provider [%s] failed (HTTP %d)", provider.Model, resp.StatusCode)
+			continue
+		}
+
+		// 成功，清空错误跳出重试
+		lastErr = nil
+		break
 	}
 
-	reqBytes, err := json.Marshal(reqPayload)
-
-	// // 看看发给大模型的数据结构长啥样 (截取前 1000 个字符，防止 Base64 刷屏)
-	// preview := string(reqBytes)
-	// if len(preview) > 3000 {
-	// 	preview = preview[:3000] + "...[后面太长已截断]"
-	// }
-	// slog.WarnContext(ctx, "📦【发包检查】即将发给大模型的 Payload", "preview", preview)
-
-	if err != nil {
-		return nil, fmt.Errorf("构造 LLM 请求失败: %w", err)
+	if lastErr != nil {
+		return nil, fmt.Errorf("所有大模型服务商均调用失败: %w", lastErr)
 	}
-
-	// 6. 构造 HTTP POST 请求
-	apiURL := fmt.Sprintf("%s/chat/completions", c.cfg.BaseURL)
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBytes))
-	if err != nil {
-		return nil, fmt.Errorf("创建 HTTP 请求失败: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.APIKey))
-
-	// 7. 发起http请求
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("调用 LLM API 网络异常: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-
 	// 看看接口返回的原始未清洗文本到底是什么
-	slog.DebugContext(ctx, "📥【原始响应】谷歌 API 返回的完整原始文本", "raw_resp", string(respBytes))
-
-	if err != nil {
-		return nil, fmt.Errorf("读取 LLM 响应失败: %w", err)
-	}
-
-	// 8. 检查 HTTP 状态码
-	if resp.StatusCode != http.StatusOK {
-		slog.Error("LLM API 返回异常", "status", resp.StatusCode, "body", string(respBytes))
-		return nil, fmt.Errorf("LLM API 调用失败 (HTTP %d)", resp.StatusCode)
-	}
+	slog.DebugContext(ctx, "📥【原始响应】API 返回的完整原始文本", "raw_resp", string(respBytes))
 
 	// 9. 解包 OpenAI 响应
 	var chatResp ChatCompletionResponse

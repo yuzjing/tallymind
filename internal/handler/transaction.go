@@ -17,13 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// API通用结构体
-type APIResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
-}
-
 type TransactionHandler struct {
 	cfg ledger.Config
 }

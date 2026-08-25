@@ -85,6 +85,9 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time) (*Per
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan ledger file error: %w", err)
+	}
 
 	// 1. 分类占比排行榜
 	categoryStats := make([]CategoryStat, 0, len(categoryMap))

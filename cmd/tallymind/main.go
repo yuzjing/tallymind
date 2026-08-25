@@ -61,7 +61,11 @@ func initLogger(logLevel, logDir string) {
 }
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		slog.Error("加载配置文件失败", "err", err)
+		os.Exit(1)
+	}
 	initLogger(cfg.App.LogLevel, cfg.App.LogDir)
 
 	slog.Info("🚀 tallymind 启动中 | 应用开关配置", "App", cfg.App)
@@ -76,7 +80,7 @@ func main() {
 		if err != nil {
 			slog.Warn("⚠️ 大模型客户端未就绪 (降级运行)", "err", err)
 		} else {
-			slog.Info("🤖 大模型客户端已就绪", "model", cfg.LLM.Model)
+			slog.Info("🤖 大模型客户端已就绪", "model", cfg.LLM.Providers)
 		}
 	} else {
 		slog.Info("⏹️ ENABLE_LLM=false，已关闭大模型功能")
@@ -105,6 +109,9 @@ func main() {
 		}
 
 		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
+		// 移动端 H5 电子小票控制器 (语义一清二楚！)
+		receiptHandler := handler.NewReceiptHandler(cfg)
+		receiptHandler.RegisterRoutes(r) // receipt/:id
 		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
 		if cfg.App.EnableWeComHTTP {
 			notifierMgr := notifier.NewManager()
