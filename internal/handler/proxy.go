@@ -20,7 +20,6 @@ func RegisterPanelProxy(r gin.IRouter, mountPath, targetURL, signSecret string) 
 	mountPath = strings.TrimSpace(mountPath)
 	targetURL = strings.TrimSpace(targetURL)
 
-	// 只要路径或目标地址未配置，静默关闭代理
 	if mountPath == "" || targetURL == "" {
 		return nil
 	}
@@ -33,59 +32,62 @@ func RegisterPanelProxy(r gin.IRouter, mountPath, targetURL, signSecret string) 
 	mountPath = "/" + strings.Trim(mountPath, "/")
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
-	// -------------------------------------------------------------
-	// 1. 通用 SSO 票据换票端点: GET {mountPath}/auth?token=xxx
-	// -------------------------------------------------------------
-	r.GET(mountPath+"/auth", func(c *gin.Context) {
-		token := c.Query("token")
+	// 统一处理代理与换票分发 (避免 Gin Radix Tree 路由冲突)
+	unifiedHandler := func(c *gin.Context) {
+		subPath := strings.TrimPrefix(c.Param("any"), "/")
 
-		// 校验外部传入的时效票据 (Token 无效或过期直接 404 隐身)
-		if !crypto.VerifySignedToken(signSecret, "panel_sso", token) {
-			c.AbortWithStatus(http.StatusNotFound)
+		// -------------------------------------------------------------
+		// 1. 命中换票逻辑: /tallyview/auth?token=xxx
+		// -------------------------------------------------------------
+		if subPath == "auth" {
+			token := c.Query("token")
+
+			// 验签失败：直接 404 伪装，防探测
+			if !crypto.VerifySignedToken(signSecret, "panel_sso", token) {
+				c.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+
+			// 签发 2 小时有效期的会话 Token
+			sessionToken := crypto.GenerateSignedToken(
+				signSecret,
+				"session_user",
+				2*time.Hour,
+				crypto.DefaultTokenSignLen,
+			)
+
+			// 写入仅限 HTTPS 传输的 HttpOnly 安全会话 Cookie
+			c.SetCookie(
+				SessionCookieName,
+				sessionToken,
+				7200,      // 2 小时时效 (秒)
+				mountPath, // 仅在挂载路径下生效
+				"",        // 当前域名
+				true,      // 仅 HTTPS 传输
+				true,      // HttpOnly
+			)
+
+			// 重定向至看板首页 (如 /tallyview/)
+			c.Redirect(http.StatusFound, mountPath+"/")
 			return
 		}
 
-		// 票据核验成功，签发 2 小时有效期的会话 Token
-		sessionToken := crypto.GenerateSignedToken(
-			signSecret,
-			"session_user",
-			2*time.Hour,
-			crypto.DefaultTokenSignLen,
-		)
-
-		// 写入仅限 HTTPS 传输的 HttpOnly 安全会话 Cookie
-		c.SetCookie(
-			SessionCookieName,
-			sessionToken,
-			7200,      // 2 小时时效 (秒)
-			mountPath, // 严格限制在挂载路径生效
-			"",        // 自动继承当前请求域名
-			true,      // 强制仅 HTTPS 传输 (防止网络抓包)
-			true,      // HttpOnly (防止客户端脚本窃取)
-		)
-
-		// 重定向至看板主页
-		c.Redirect(http.StatusFound, mountPath+"/")
-	})
-
-	// -------------------------------------------------------------
-	// 2. 目标服务反向代理主路由 (集成会话安全拦截中间件)
-	// -------------------------------------------------------------
-	authProxyHandler := func(c *gin.Context) {
+		// -------------------------------------------------------------
+		// 2. 正常看板页面与静态资源反代 (校验 Cookie)
+		// -------------------------------------------------------------
 		cookie, err := c.Cookie(SessionCookieName)
-
-		// 未持有合法会话凭证时，统一返回 404 伪装 (隐形防御，防探测)
 		if err != nil || !crypto.VerifySignedToken(signSecret, "session_user", cookie) {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
 
-		// 鉴权通过，透明反代流量至后端目标服务
+		// 授权通过，转发请求至后端 Fava 容器
 		proxy.ServeHTTP(c.Writer, c.Request)
 	}
 
-	r.Any(mountPath, authProxyHandler)
-	r.Any(mountPath+"/*any", authProxyHandler)
+	// 仅注册单前缀与通配路由，完美避开 Gin 冲突
+	r.Any(mountPath, unifiedHandler)
+	r.Any(mountPath+"/*any", unifiedHandler)
 
 	return nil
 }
