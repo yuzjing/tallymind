@@ -5,18 +5,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"tallymind/internal/handler"
-	"tallymind/internal/ledger"
-	"tallymind/internal/llm"
-	"tallymind/internal/reporter"
+
+	"tallymind/internal/service"
+
 	"tallymind/internal/template"
 	"time"
 )
 
 type WeComHandler struct {
-	txHandler       *handler.TransactionHandler
-	llmClient       *llm.Client
 	client          *Client
+	accountService  *service.AccountingService
 	templateDir     string
 	publicURL       string
 	successTemplate string
@@ -24,13 +22,11 @@ type WeComHandler struct {
 }
 
 func NewWeComHandler(
-	txHandler *handler.TransactionHandler, llmClient *llm.Client, client *Client, templateDir, publicURL, successTemplate, failureTemplate string) *WeComHandler {
+	accountService *service.AccountingService, client *Client, templateDir, successTemplate, failureTemplate string) *WeComHandler {
 	return &WeComHandler{
-		txHandler:       txHandler,
-		llmClient:       llmClient,
+		accountService:  accountService,
 		client:          client,
 		templateDir:     templateDir,
-		publicURL:       publicURL,
 		successTemplate: successTemplate,
 		failureTemplate: failureTemplate,
 	}
@@ -48,67 +44,50 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 		return
 	}
 
-	// 2. 调用通用的 LLM 记账管道
-	batch, err := h.llmClient.ParseTransaction(ctx, userText, attachments...)
-	if err != nil {
-		slog.ErrorContext(ctx, "[WeCom] LLM 解析失败", "userID", userID, "err", err)
-		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "❌ **记账识别失败**\n> "+err.Error()))
-		return
-	}
-	if batch == nil || len(batch.Transactions) == 0 {
-		slog.WarnContext(ctx, "[WeCom] 消息中未识别出有效交易", "userID", userID)
-		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "⚠️ **未识别出有效账单**\n> 请输入具体的消费信息或清晰的小票截图。"))
-		return
-	}
-	// 3. 调 transaction 包存盘，拿到摘要
 	msgTime := time.Unix(msg.CreateTime, 0)
 	if msg.CreateTime == 0 {
 		msgTime = time.Now()
 	}
 
-	reqCtx := ledger.RequestContext{
+	// 2. 组装输入并调用核心服务
+
+	input := service.AccountingInput{
 		UserID:        userID,
 		SourceChannel: "wecom_plugin",
 		MessageID:     fmt.Sprintf("%d", msg.MsgID),
 		MessageTime:   msgTime,
 		Location:      msg.Label,
+		UserText:      userText,
+		Attachments:   attachments,
 	}
-	saveBatch, err := h.txHandler.SaveBatch(ctx, reqCtx, batch)
+
+	replyData, err := h.accountService.Process(ctx, input)
 	if err != nil {
-		slog.ErrorContext(ctx, "[WeCom] 账单存盘失败", "userID", userID, "err", err)
-		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "❌ **账单保存失败**\n> "+err.Error()))
+		slog.ErrorContext(ctx, "[WeCom] 记账处理失败", "userID", userID, "err", err)
+		_ = h.client.SendMessage(ctx, NewTextMessage(userID, "❌ **记账失败**\n> "+err.Error()))
 		return
 	}
 
-	//4.组装数据，通过外部 YAML 模板渲染出 MessageRequest！
-	replyData := reporter.BuildReplyData(saveBatch, h.publicURL, msg.PicURL)
-
+	// 3. 渲染微信模板并发送卡片
 	cardMsg, err := template.Render[MessageRequest](h.templateDir, h.successTemplate, replyData)
 	if err != nil {
 		slog.ErrorContext(ctx, "[WeCom] 渲染模板失败", "err", err)
-
 		return
 	}
 
-	//可删区域，debug用
-
-	// , _ := json.Marshal(cardMsg)
-	// slog.InfoContext(ctx, "👉 最终发给企微的完整请求体", "payload", string(jsonBytes))
-
-	// 5. 补上接收人并发送
 	cardMsg.ToUser = userID
 	if err := h.client.SendMessage(ctx, cardMsg); err != nil {
 		slog.ErrorContext(ctx, "[WeCom] 发送消息失败", "userID", userID, "err", err)
 		return
 	}
-	slog.InfoContext(ctx, "[WeCom] 发送消息成功", "userID", userID)
+	slog.InfoContext(ctx, "[WeCom] 记账成功并回复", "userID", userID)
 
 }
 
 // parseIncomingMessage 私有提取器：专门将企微特有消息映射为 LLM 通用格式 (图/文/音/档)
-func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMsg) (string, []llm.Attachment, error) {
+func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMsg) (string, []service.Attachment, error) {
 	var userText string
-	var attachments []llm.Attachment
+	var attachments []service.Attachment
 
 	switch msg.MsgType {
 	case "text":
@@ -124,7 +103,7 @@ func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMs
 			}
 		}
 		if imgURL != "" {
-			attachments = append(attachments, llm.Attachment{Type: "image_url", URL: imgURL})
+			attachments = append(attachments, service.Attachment{Type: "image_url", URL: imgURL})
 		}
 
 	// 微信语音记账通道！
@@ -136,7 +115,7 @@ func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMs
 		if err != nil {
 			return "", nil, fmt.Errorf("获取语音下载链接失败: %w", err)
 		}
-		attachments = append(attachments, llm.Attachment{Type: "audio", URL: voiceURL})
+		attachments = append(attachments, service.Attachment{Type: "audio", URL: voiceURL})
 
 	// PDF 电子发票通道！
 	case "file":
@@ -150,7 +129,7 @@ func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMs
 		if msg.Title != "" {
 			userText = fmt.Sprintf("发票名称: %s", msg.Title)
 		}
-		attachments = append(attachments, llm.Attachment{Type: "document", URL: fileURL})
+		attachments = append(attachments, service.Attachment{Type: "document", URL: fileURL})
 
 	case "location":
 		userText = fmt.Sprintf("用户在位置打卡记账：%s (坐标: %s, %s)", msg.Label, msg.LocationX, msg.LocationY)

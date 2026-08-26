@@ -4,25 +4,19 @@ package handler
 
 import (
 	"cmp"
-	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"tallymind/internal/ledger"
-
-	"time"
-
-	"tallymind/internal/reporter"
+	"tallymind/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 type TransactionHandler struct {
-	cfg ledger.Config
+	accountService *service.AccountingService
 }
 
-func NewTransactionHandler(ledgerCfg ledger.Config) *TransactionHandler {
-	return &TransactionHandler{cfg: ledgerCfg}
+func NewTransactionHandler(accountService *service.AccountingService) *TransactionHandler {
+	return &TransactionHandler{accountService: accountService}
 }
 
 // HandleTransaction 通用 HTTP 记账 API 接口
@@ -39,18 +33,11 @@ func NewTransactionHandler(ledgerCfg ledger.Config) *TransactionHandler {
 // @Router       /api/v1/transaction [post]
 func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 	// 获取请求header
-	userID := cmp.Or(c.GetHeader("X-User-ID"), h.cfg.DefaultReporter)
+	userID := cmp.Or(c.GetHeader("X-User-ID"))
 	sourceChannel := cmp.Or(c.GetHeader("X-Source-Channel"), "unknown_api_plugin")
 
-	// 组装请求体传输层上下文
-	reqCtx := ledger.RequestContext{
-		UserID:        userID,
-		SourceChannel: sourceChannel,
-		MessageTime:   time.Now(),
-	}
-
 	// Gin 的极简 JSON 绑定与自动校验
-	var req ledger.BatchTransactions
+	var req service.BatchTransactions
 	if err := c.ShouldBindJSON(&req); err != nil {
 		slog.Warn("API 请求 JSON 解析失败", "err", err)
 		c.JSON(http.StatusBadRequest, APIResponse{
@@ -60,7 +47,8 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 		return
 	}
 	// 调用 ledger 处理函数
-	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, &req, h.cfg, reqCtx); err != nil {
+	replyData, err := h.accountService.RecordDirect(c.Request.Context(), userID, sourceChannel, &req)
+	if err != nil {
 		slog.Error("账单写入失败", "err", err)
 		c.JSON(http.StatusBadRequest, APIResponse{
 			Code:    400,
@@ -69,33 +57,19 @@ func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
 		return
 	}
 
-	//生成详细的友情摘要卡片 (包含日期、商户、备注、金额、分类、账户)
-	replyData := reporter.BuildReplyData(&req, "", "")
+	finalUser := cmp.Or(userID, "unknown_user")
+	finalChannel := cmp.Or(sourceChannel, "unknown_api_plugin")
 
-	slog.Info("通用 API 成功记账", "user", userID, "channel", sourceChannel, "headline", replyData.SummaryHeadline())
+	slog.Info("通用 API 成功记账", "user", finalUser, "channel", finalChannel, "headline", replyData.SummaryHeadline())
 	c.JSON(http.StatusOK, APIResponse{
 		Code:    0,
-		Message: replyData.SummaryHeadline(), // 或者用 replyData.SummaryText (包含逐行小票)
+		Message: replyData.SummaryHeadline(),
 		Data: gin.H{
 			"count":   replyData.Count,
 			"total":   replyData.TotalAmount,
-			"user":    userID,
-			"channel": sourceChannel,
+			"user":    finalUser,
+			"channel": finalChannel,
 			"details": req.Transactions,
 		},
 	})
-}
-
-func (h *TransactionHandler) SaveBatch(ctx context.Context, reqCtx ledger.RequestContext, batch *ledger.BatchTransactions) (*ledger.BatchTransactions, error) {
-	if batch == nil || len(batch.Transactions) == 0 {
-		return nil, fmt.Errorf("交易批次为空，无需存盘")
-	}
-
-	// 存盘上下文在 transaction.go
-
-	if err := ledger.AppendBatchTransactions(h.cfg.FilePath, batch, h.cfg, reqCtx); err != nil {
-		return nil, fmt.Errorf("保存交易批次失败: %w", err)
-	}
-
-	return batch, nil
 }

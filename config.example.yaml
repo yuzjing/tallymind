@@ -1,74 +1,67 @@
-# ==============================================================================
-# TallyMind 核心配置文件模板 (config.example.yaml)
-# 使用方式: 复制此文件为 config.yaml，并填入真实凭证
-#   cp config.example.yaml config.yaml
-# ==============================================================================
-
 # ==========================================
 # 1. 基础应用与服务配置
 # ==========================================
 app:
-  env: "production"             # 运行环境: development / production
-  debug: false                  # 开启调试模式将强制输出全量 debug 日志
-  log_level: "info"             # 日志级别: debug / info / warn / error
-  log_dir: "/app/logs"          # 日志持久化输出目录
-  port: "8080"                  # 服务监听端口
-  public_url: "https://tallymind.example.com" # 外部公网访问域名 (用于生成小票二维码与回调)
-  template_dir: "templates"     # 消息渲染模板根目录
-  receipt_sign_secret: ""       # 2 小时小票验签密钥 (留空自动复用 wecom.secret)
+  env: "production"                # 运行环境: development / production                    # 开启调试模式将强制输出全量 debug 日志
+  log_level: "debug"                # debug / info / warn / error
+  log_dir: "/app/logs"             # 日志持久化输出目录
+  port: "8080"                     # 监听端口
+  public_url: "https://tallymind.528900.xyz" # 外部公网访问域名
+  template_dir: "templates"        # 模板根目录
+  receipt_template: ""
+  receipt_sign_secret: ""          # 小票 2 小时验签私钥 
 
   # 功能开关
-  enable_http_api: true         # 是否开启通用 HTTP API 接口
-  enable_wecom_http: true       # 是否开启企微自建应用 HTTP 回调与主动推送
-  enable_wecom_wss: false       # 是否开启企微 WSS 机器人长连接服务
-  enable_llm: true              # 是否开启 AI 智能大模型多模态记账
-  enable_git_backup: false      # 是否开启 Beancount 本地账本 Git 定时自动备份
-  git_backup_cron: "0 */6 * * *" # Git 自动备份 Cron 表达式
-  enable_reporter: false        # 是否开启定时报表总开关
+  enable_http_api: true            # 是否开启通用 HTTP API
+  enable_wecom_http: true          # 是否开启企微自建应用 HTTP 回调
+  enable_wecom_wss: false          # 是否开启企微 WSS 机器人长连接
+  enable_llm: true                 # 是否开启 AI 智能大模型记账
+  enable_git_backup: false         # 是否开启 Git 定时自动备份
+  git_backup_cron: "0 */6 * * *"   # 备份定时表达式
+  enable_reporter: false           # 是否开启定时报表
 
-  # 通知通道
-  report_channels: ["wecom"]    # 定时报表推送渠道切片
-  alert_channels: ["wecom"]     # 异常告警推送渠道切片
+  # 通知渠道
+  report_channels: ["wecom"]
+  alert_channels: ["wecom"]
 
 # ==========================================
 # 2. 多服务商大模型配置 (支持跨平台故障转移与多 Key 轮询)
 # ==========================================
 llm:
-  max_tokens: 4096              # 单次补全最大 Token 数
-  temperature: 0.2              # 采样温度 (记账建议保持低随机性 0.1 ~ 0.3)
+  max_tokens: 4096
+  temperature: 0.2
   top_p: 0.0
   frequency_penalty: 0.0
   presence_penalty: 0.0
   providers:
-    # 🌟 主力：Google Gemini (OpenAI 协议兼容端点)
+    # 🌟 主力：Google Gemini 2.5 Flash
     - base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
       model: "gemini-2.5-flash"
-      api_key: "AIzaSy_Gemini_Key_1..."
+      api_key: "AQ.GeminiKey1_Account1..."
 
-    # 🌟 备用：第二个 Gemini 账号 Key (用于并发限流/429 无感容灾)
+    # 🌟 备用：第二个 Gemini 账号 Key (用于并发限流容灾)
     - base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
       model: "gemini-2.5-flash"
-      api_key: "AIzaSy_Gemini_Key_2..."
+      api_key: "AQ.GeminiKey2_Account2..."
 
     # 🌟 备用：DeepSeek 官方 API (可选)
-    # - base_url: "https://api.deepseek.com/v1"
+    # - base_url: "https://api.deepseek.com"
     #   model: "deepseek-chat"
-    #   api_key: "sk-..."
+    #   api_key: "sk-DeepSeekKey..."
 
 # ==========================================
 # 3. 企业微信自建应用配置
 # ==========================================
 wecom:
-  # 1. 企微自建应用 / 主动推送 / HTTP 回调凭证
-  corp_id: "ww_your_corpid_here"
+  corp_id: "ww_your_corpid"
   agent_id: 1000002
-  secret: "your_wecom_app_secret_here"
-  token: "your_wecom_callback_token_here"
-  encoding_aes_key: "your_43_chars_encoding_aes_key_here"
+  secret: "your_app_secret"
+  token: "your_callback_token"
+  encoding_aes_key: "your_43_chars_encoding_aes_key"
   success_template: "wecom/expense_success.yaml"
   failure_template: "wecom/expense_fail.yaml"
 
-  # 2. 企微 API 模式机器人 (WSS 长连接专有，可选)
+  # WSS 机器人 (可选)
   bot_id: ""
   bot_secret: ""
 
@@ -76,9 +69,9 @@ wecom:
 # 4. Beancount 复式记账配置
 # ==========================================
 ledger:
-  file_path: "data/2026.bean"               # Beancount 账本主文件路径
-  default_currency: "CNY"                   # 默认结算货币
-  default_reporter: "User"                  # 默认记账人
-  fallback_category: "Expenses:Uncategorized" # 未匹配分类时的保底支出科目
-  fallback_account: "Assets:Pending:Unknown"  # 未识别支付方式时的保底资产账户
-  fallback_payee: "日常消费"                 # 未识别交易对象时的保底商户
+  file_path: "data/2026.bean"
+  default_currency: "CNY"
+  default_reporter: "User"
+  fallback_category: "Expenses:Uncategorized"
+  fallback_account: "Assets:Pending:Unknown"
+  fallback_payee: "日常消费"

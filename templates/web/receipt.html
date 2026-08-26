@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🧾 电子记账小票 - TallyMind</title>
+    <style>
+        :root {
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --accent: #2563eb;
+            --border-color: #e5e7eb;
+            --tag-bg: #eff6ff;
+            --tag-text: #1d4ed8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            padding: 20px 14px;
+            min-height: 100vh;
+        }
+        .receipt-container {
+            width: 100%;
+            max-width: 480px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+            overflow: hidden;
+            position: relative;
+        }
+        /* 小票头部 */
+        .receipt-header {
+            padding: 24px 20px 16px;
+            text-align: center;
+            border-bottom: 2px dashed var(--border-color);
+            position: relative;
+        }
+        .receipt-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .receipt-time {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+        .badge-signed {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            background: #dcfce7;
+            color: #15803d;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        /* 明细列表 */
+        .receipt-body {
+            padding: 20px;
+        }
+        .tx-card {
+            background: #fafafa;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 14px;
+        }
+        .tx-card:last-child {
+            margin-bottom: 0;
+        }
+        .tx-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 8px;
+        }
+        .tx-payee {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .tx-amount {
+            font-size: 18px;
+            font-weight: 700;
+            color: #ea580c;
+        }
+        .tx-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 12px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .tx-meta-item {
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .tx-tag {
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            margin-left: 4px;
+        }
+        .tx-desc {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border-color);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        /* 原始凭据图 */
+        .receipt-media {
+            padding: 0 20px 20px;
+        }
+        .media-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .media-preview {
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            display: block;
+        }
+        /* 底部时效提示 */
+        .receipt-footer {
+            background: #f9fafb;
+            padding: 14px 20px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-container">
+        <!-- 头部信息 -->
+        <div class="receipt-header">
+            <div class="receipt-title">🧾 TallyMind 记账凭单</div>
+            <div class="receipt-time">生成时间: {{ .CreatedAt }}</div>
+            <div class="badge-signed">✓ 签名核验通过 · 2小时有效</div>
+        </div>
+
+        <!-- 交易明细 -->
+        <div class="receipt-body">
+            {{ range .Transactions }}
+            <div class="tx-card">
+                <div class="tx-top">
+                    <div class="tx-payee">{{ .Payee }}</div>
+                    <div class="tx-amount">{{ .Amount }} {{ .Currency }}</div>
+                </div>
+                <div class="tx-meta">
+                    <div class="tx-meta-item">
+                        <span>🏷️ 科目:</span>
+                        <span class="tx-tag">{{ .Category }}</span>
+                    </div>
+                    <div class="tx-meta-item">
+                        <span>💳 账户:</span>
+                        <span style="margin-left: 4px;">{{ .Account }}</span>
+                    </div>
+                    <div class="tx-meta-item">
+                        <span>📅 日期:</span>
+                        <span style="margin-left: 4px;">{{ .Date }}</span>
+                    </div>
+                    <div class="tx-meta-item">
+                        <span>👤 记录人:</span>
+                        <span style="margin-left: 4px;">{{ .Reporter }}</span>
+                    </div>
+                </div>
+                {{ if .Description }}
+                <div class="tx-desc">
+                    <strong>备注:</strong> {{ .Description }}
+                </div>
+                {{ end }}
+            </div>
+            {{ end }}
+        </div>
+
+        <!-- 原始凭据图预览 (如果有) -->
+        {{ if .ImageURL }}
+        <div class="receipt-media">
+            <div class="media-title">📸 原始单据快照</div>
+            <img class="media-preview" src="{{ .ImageURL }}" alt="Receipt Snapshot" />
+        </div>
+        {{ end }}
+
+        <!-- 底部说明 -->
+        <div class="receipt-footer">
+            <span>Beancount 复式记账系统自动归档</span>
+        </div>
+    </div>
+</body>
+</html>

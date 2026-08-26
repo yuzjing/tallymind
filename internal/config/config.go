@@ -21,7 +21,9 @@ type AppConfig struct {
 	Port              string `yaml:"port"`                // 监听端口
 	ReceiptSignSecret string `yaml:"receipt_sign_secret"` // 小票签名密钥
 	TemplateDir       string `yaml:"template_dir"`        // 模板目录路径
-	PublicURL         string `yaml:"public_url"`          // 应用外部公网主域名
+	ReceiptTemplate   string `yaml:"receipt_template"`    // 小票模板路径
+
+	PublicURL string `yaml:"public_url"` // 应用外部公网主域名
 
 	// 1. 通道独立开关
 	EnableWeComWSS  bool `yaml:"enable_wecom_wss"`  // 是否开启企微 WSS 长连接服务
@@ -94,6 +96,7 @@ func setDefaults(cfg *Config) {
 	cfg.App.LogLevel = cmp.Or(cfg.App.LogLevel, "info")
 	cfg.App.Port = cmp.Or(cfg.App.Port, "8080")
 	cfg.App.TemplateDir = cmp.Or(cfg.App.TemplateDir, "templates")
+	cfg.App.ReceiptTemplate = cmp.Or(cfg.App.ReceiptTemplate, "localhost")
 	cfg.App.ReceiptSignSecret = cmp.Or(cfg.App.ReceiptSignSecret, "tallymind_default_secret_key")
 
 	cfg.Ledger.FilePath = cmp.Or(cfg.Ledger.FilePath, "data/2026.bean")

@@ -24,6 +24,7 @@ import (
 	"tallymind/internal/llm"
 	"tallymind/internal/notifier"
 	"tallymind/internal/plugin/wecom"
+	"tallymind/internal/service"
 )
 
 func initLogger(logLevel, logDir string) {
@@ -71,7 +72,7 @@ func main() {
 	slog.Info("🚀 tallymind 启动中 | 应用开关配置", "App", cfg.App)
 	slog.Info("📁 账本存储配置", "ledger", cfg.Ledger)
 
-	// 容错初始化各个子模块 (根据 .env 特性开关按需创建)
+	// 容错初始化各个子模块
 
 	var llmClient *llm.Client
 	if cfg.App.EnableLLM {
@@ -99,29 +100,52 @@ func main() {
 		}
 
 		r := gin.Default()
-		txHandler := handler.NewTransactionHandler(cfg.Ledger)
 
-		if cfg.App.Env != "production" || cfg.App.Debug {
+		if cfg.App.Env != "production" {
 			r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 			slog.Info("📖 Swagger API 文档已开启", "path", "/swagger/index.html")
 		} else {
 			slog.Info("🔒 生产环境 (production) 已安全禁用 Swagger API 文档")
 		}
 
+		// -------------------------------------------------------------
+		// 1. 最先初始化核心业务服务 (作为单例业务大脑)
+		// -------------------------------------------------------------
+		accountingService := service.NewAccountingService(cfg, llmClient)
+
+		// -------------------------------------------------------------
+		// 2. 初始化标准 HTTP REST 接口 (注入 accountingService)
+		// -------------------------------------------------------------
+		txHandler := handler.NewTransactionHandler(accountingService)
 		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
-		// 移动端 H5 电子小票控制器 (语义一清二楚！)
-		receiptHandler := handler.NewReceiptHandler(cfg)
-		receiptHandler.RegisterRoutes(r) // receipt/:id
-		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
+
+		// -------------------------------------------------------------
+		// 3. 初始化 H5 电子小票控制器 (注入 accountingService)
+		// -------------------------------------------------------------
+		receiptHandler := handler.NewReceiptHandler(cfg, accountingService)
+		receiptHandler.RegisterRoutes(r) // /receipt/:id
+
+		// -------------------------------------------------------------
+		// 4. 初始化企业微信 HTTP 回调插件 (注入 accountingService)
+		// -------------------------------------------------------------
 		if cfg.App.EnableWeComHTTP {
 			notifierMgr := notifier.NewManager()
 			wecomClient := wecom.NewClient(&cfg.WeCom)
 			notifierMgr.Register("wecom", wecomClient)
-			wecomHandler := wecom.NewWeComHandler(txHandler, llmClient, wecomClient, cfg.App.TemplateDir, cfg.App.PublicURL, cfg.WeCom.SuccessTemplate, cfg.WeCom.FailureTemplate)
+
+			wecomHandler := wecom.NewWeComHandler(
+				accountingService,
+				wecomClient,
+				cfg.App.TemplateDir,
+				cfg.WeCom.SuccessTemplate,
+				cfg.WeCom.FailureTemplate,
+			)
+
 			callbackHandler := wecom.NewCallbackHandler(&cfg.WeCom, wecomHandler)
 			callbackHandler.RegisterRoutes(r)
 			slog.Info("已加载企业微信 HTTP 回调插件")
 		}
+
 		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
 
 		// 协程启动 Gin HTTP 服务
@@ -134,7 +158,6 @@ func main() {
 	} else {
 		slog.Info("⏹️ ENABLE_HTTPAPI=false, 🌐 HTTP API 服务已关闭")
 	}
-
 	var wsClient *wecom.WSClient
 	if cfg.App.EnableWeComWSS {
 		if cfg.WeCom.BotID != "" && cfg.WeCom.BotSecret != "" {
