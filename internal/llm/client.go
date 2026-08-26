@@ -95,11 +95,16 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 }
 
 // buildSystemPrompt 动态生成 Prompt，传入当前日期供 AI 参考
-func buildSystemPrompt() string {
+func (c *Client) buildSystemPrompt(contextHints string) string {
 	today := time.Now().Format("2006-01-02")
 	year := today[:4]
 
-	return fmt.Sprintf(`你是一个专业的全模态财务记账助手。将用户发送的文本、语音、账单小票/发票截图提取为标准 Beancount JSON 数据。今日基准日期：%[1]s。
+	var extraHints string
+	if strings.TrimSpace(contextHints) != "" {
+		extraHints = "\n" + strings.TrimSpace(contextHints) + "\n"
+	}
+
+	return fmt.Sprintf(`你是一个专业的全模态财务记账助手。将用户发送的文本、语音、账单小票/发票截图提取为标准 Beancount JSON 数据。今日基准日期：%[1]s。%[2]s
 
 【核心提取原则】：
 1. amount: 实付金额绝对值（必须 > 0，退款/收入亦为正数，无有效交易返回 {"transactions": []}）；currency: 默认 "CNY"，见外币符号精准提取(如 USD, JPY)。
@@ -109,11 +114,12 @@ func buildSystemPrompt() string {
 5. account: 结算账户(如 Assets:Bank:CMB, Liabilities:CreditCard:ICBC, Assets:WeChat:Wallet, Liabilities:Alipay:Huabei)。【必须见图文明确凭据才提取，严禁根据聊天渠道臆测，无凭据必须为 ""】。
 6. tags: 字符串数组。提取特征标签（如周期扣费 "#recurring"、待报销 "#reimbursement"、特定场景如 "#medical"、"#renovation" 等），无特征设为 []。
 7. metadata (无依据设为 ""):
-   - owner: 实际消费归属人 (如 "wife", "husband"，默认 "")。
-   - beneficiary: 实际受益人 (如 "baby", "parents", "wife", "family"，自由推断)。
+   - owner: 实际消费归属人 (严格对照家庭成员表归一化，默认 "")。
+   - beneficiary: 实际受益人 (严格对照家庭成员表归一化，如 "runrun", "jingjing", "parents", "friends"，默认 "")。
    - invoice_status: 电子发票填 "done"，需开票/待报销填 "pending"。
    - original_amount / discount_amount: 原价与优惠减免金额。
    - time / location / link: 小票具体时间(HH:MM:SS)、分店地点、订单流水号。
+
 
 【输出 JSON 示例】：
 {
@@ -142,7 +148,7 @@ func buildSystemPrompt() string {
   ]
 }
 
-【要求】：只输出合法 JSON 对象，不含任何 Markdown 标记或多余废话。`, today, year)
+【要求】：只输出合法 JSON 对象，不含任何 Markdown 标记或多余废话。`, today, year, extraHints)
 }
 
 func NewClient(cfg Config) (*Client, error) {
@@ -161,7 +167,7 @@ func NewClient(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) ParseTransaction(ctx context.Context, userText string, attachments ...Attachment) (*ledger.BatchTransactions, error) {
+func (c *Client) ParseTransaction(ctx context.Context, userText string, contextHints string, attachments ...Attachment) (*ledger.BatchTransactions, error) {
 	trimmedText := strings.TrimSpace(userText)
 
 	// 1. 组装多模态媒体部分
@@ -227,7 +233,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, attachme
 		reqPayload := ChatRequest{
 			Model: provider.Model,
 			Messages: []ChatMessage{
-				{Role: "system", Content: buildSystemPrompt()},
+				{Role: "system", Content: c.buildSystemPrompt(contextHints)},
 				{Role: "user", Content: parts},
 			},
 			Temperature:      c.cfg.Temperature,

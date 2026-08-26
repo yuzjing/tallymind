@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"tallymind/internal/config"
@@ -42,6 +43,12 @@ func (h *ReceiptHandler) RenderReceipt(c *gin.Context) {
 		return
 	}
 
+	// 计算动态看板跳转链接：仅当配置了 URL 和 Path 时才拼接
+	panelPath := ""
+	if strings.TrimSpace(h.cfg.App.PanelURL) != "" && strings.TrimSpace(h.cfg.App.PanelPath) != "" {
+		panelPath = "/" + strings.Trim(h.cfg.App.PanelPath, "/") + "/"
+	}
+
 	// 2. 动态拼接模板路径
 	tmplPath := filepath.Join(h.cfg.App.TemplateDir, h.cfg.App.ReceiptTemplate)
 	tmpl, err := template.ParseFiles(tmplPath)
@@ -53,8 +60,9 @@ func (h *ReceiptHandler) RenderReceipt(c *gin.Context) {
 	// 3. 输出 HTML 响应
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	_ = tmpl.Execute(c.Writer, ReceiptPageData{
-		Receipt: data,
-		NowTime: time.Now().Format("2006-01-02 15:04:05"),
+		Receipt:   data,
+		NowTime:   time.Now().Format("2006-01-02 15:04:05"),
+		PanelPath: panelPath,
 	})
 
 }

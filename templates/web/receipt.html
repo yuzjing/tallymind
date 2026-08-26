@@ -10,10 +10,11 @@
             --card-bg: #ffffff;
             --text-main: #1f2937;
             --text-muted: #6b7280;
-            --accent: #2563eb;
             --border-color: #e5e7eb;
             --tag-bg: #eff6ff;
             --tag-text: #1d4ed8;
+            --badge-tag-bg: #f3e8ff;
+            --badge-tag-text: #7e22ce;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -22,7 +23,7 @@
             color: var(--text-main);
             display: flex;
             justify-content: center;
-            padding: 20px 14px;
+            padding: 16px 12px;
             min-height: 100vh;
         }
         .receipt-container {
@@ -32,14 +33,14 @@
             border-radius: 16px;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
             overflow: hidden;
-            position: relative;
+            display: flex;
+            flex-direction: column;
         }
         /* 小票头部 */
         .receipt-header {
-            padding: 24px 20px 16px;
+            padding: 22px 20px 16px;
             text-align: center;
             border-bottom: 2px dashed var(--border-color);
-            position: relative;
         }
         .receipt-title {
             font-size: 20px;
@@ -67,14 +68,15 @@
         }
         /* 明细列表 */
         .receipt-body {
-            padding: 20px;
+            padding: 16px 16px 8px;
         }
         .tx-card {
-            background: #fafafa;
+            background: #ffffff;
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 14px;
-            margin-bottom: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
         }
         .tx-card:last-child {
             margin-bottom: 0;
@@ -83,7 +85,7 @@
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
         }
         .tx-payee {
             font-size: 16px;
@@ -98,7 +100,7 @@
         .tx-meta {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 6px 12px;
+            gap: 6px 10px;
             font-size: 13px;
             color: var(--text-muted);
         }
@@ -118,6 +120,21 @@
             font-weight: 500;
             margin-left: 4px;
         }
+        /* 标签栏 */
+        .tx-tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+        }
+        .badge-custom-tag {
+            background: var(--badge-tag-bg);
+            color: var(--badge-tag-text);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
         .tx-desc {
             margin-top: 8px;
             padding-top: 8px;
@@ -125,15 +142,9 @@
             font-size: 12px;
             color: var(--text-muted);
         }
-        /* 原始凭据图 */
+        /* 原始单据快照 */
         .receipt-media {
-            padding: 0 20px 20px;
-        }
-        .media-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--text-muted);
-            margin-bottom: 8px;
+            padding: 8px 16px 16px;
         }
         .media-preview {
             width: 100%;
@@ -141,10 +152,35 @@
             border: 1px solid var(--border-color);
             display: block;
         }
-        /* 底部时效提示 */
+        /* Fava 直达主操作按钮 */
+        .receipt-actions {
+            padding: 14px 16px;
+            background: #ffffff;
+            border-top: 1px solid var(--border-color);
+        }
+        .btn-fava {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+            padding: 11px 0;
+            background: #2563eb;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+            transition: background-color 0.15s ease;
+        }
+        .btn-fava:active {
+            background: #1d4ed8;
+        }
+        /* 底部信息 */
         .receipt-footer {
             background: #f9fafb;
-            padding: 14px 20px;
+            padding: 12px 16px;
             text-align: center;
             font-size: 12px;
             color: var(--text-muted);
@@ -154,25 +190,46 @@
 </head>
 <body>
     <div class="receipt-container">
-        <!-- 头部信息 -->
+        <!-- 1. 小票头部 -->
         <div class="receipt-header">
             <div class="receipt-title">🧾 TallyMind 记账凭单</div>
-            <div class="receipt-time">生成时间: {{ .CreatedAt }}</div>
-            <div class="badge-signed">✓ 签名核验通过 · 2小时有效</div>
+            <div class="receipt-time">生成时间: {{ .NowTime }}</div>
+            <div class="badge-signed">✓ 签名核验通过 · 2小时内有效</div>
+
+            {{ if gt .Receipt.Count 1 }}
+            <div style="
+                margin-top: 14px;
+                padding: 10px 16px;
+                background: #fff7ed;
+                border: 1px solid #ffedd5;
+                border-radius: 10px;
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+            ">
+                <span style="font-size: 13px; color: #9a3412; font-weight: 500;">
+                    📊 本次共计入 {{ .Receipt.Count }} 笔
+                </span>
+                <span style="font-size: 18px; color: #ea580c; font-weight: 700;">
+                    ￥{{ printf "%.2f" .Receipt.TotalAmount }} <span style="font-size: 12px; font-weight: normal;">{{ .Receipt.Currency }}</span>
+                </span>
+            </div>
+            {{ end }}
         </div>
 
-        <!-- 交易明细 -->
+        <!-- 2. 交易明细列表 -->
         <div class="receipt-body">
-            {{ range .Transactions }}
+            {{ range .Receipt.Items }}
             <div class="tx-card">
                 <div class="tx-top">
-                    <div class="tx-payee">{{ .Payee }}</div>
-                    <div class="tx-amount">{{ .Amount }} {{ .Currency }}</div>
+                    <div class="tx-payee">{{ .DisplayName }}</div>
+                    <div class="tx-amount">￥{{ printf "%.2f" .Amount }} {{ .Currency }}</div>
                 </div>
+
                 <div class="tx-meta">
                     <div class="tx-meta-item">
-                        <span>🏷️ 科目:</span>
-                        <span class="tx-tag">{{ .Category }}</span>
+                        <span>🏷️ 分类:</span>
+                        <span class="tx-tag">{{ .ShortCategory }}</span>
                     </div>
                     <div class="tx-meta-item">
                         <span>💳 账户:</span>
@@ -183,30 +240,62 @@
                         <span style="margin-left: 4px;">{{ .Date }}</span>
                     </div>
                     <div class="tx-meta-item">
-                        <span>👤 记录人:</span>
+                        <span>👤 记账人:</span>
                         <span style="margin-left: 4px;">{{ .Reporter }}</span>
                     </div>
+                    {{ if .Owner }}
+                    <div class="tx-meta-item">
+                        <span>💼 出资人:</span>
+                        <span style="margin-left: 4px;">{{ .Owner }}</span>
+                    </div>
+                    {{ end }}
+                    {{ if .Beneficiary }}
+                    <div class="tx-meta-item">
+                        <span>🎁 受益人:</span>
+                        <span style="margin-left: 4px; color: #ea580c; font-weight: 500;">{{ .Beneficiary }}</span>
+                    </div>
+                    {{ end }}
                 </div>
-                {{ if .Description }}
+
+                <!-- 标签列表 -->
+                {{ if .Tags }}
+                <div class="tx-tags-container">
+                    {{ range .Tags }}
+                    <span class="badge-custom-tag">#{{ . }}</span>
+                    {{ end }}
+                </div>
+                {{ end }}
+
+                <!-- 备注 -->
+                {{ if .Narration }}
                 <div class="tx-desc">
-                    <strong>备注:</strong> {{ .Description }}
+                    <strong>备注:</strong> {{ .Narration }}
                 </div>
                 {{ end }}
             </div>
             {{ end }}
         </div>
 
-        <!-- 原始凭据图预览 (如果有) -->
-        {{ if .ImageURL }}
+        <!-- 3. 原始票据快照 -->
+        {{ if .Receipt.ImageURL }}
         <div class="receipt-media">
-            <div class="media-title">📸 原始单据快照</div>
-            <img class="media-preview" src="{{ .ImageURL }}" alt="Receipt Snapshot" />
+            <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">📸 原始票据快照</div>
+            <img class="media-preview" src="{{ .Receipt.ImageURL }}" alt="Receipt Snapshot" />
         </div>
         {{ end }}
 
-        <!-- 底部说明 -->
+        <!-- 4. 大盘直达按钮 -->
+        {{ if .PanelPath }}
+        <div class="receipt-actions">
+            <a class="btn-fava" href="{{ .PanelPath }}" target="_blank">
+                <span>📊</span> 查看全账本与图表
+            </a>
+        </div>
+        {{ end }}
+
+        <!-- 5. 页脚统计汇总 -->
         <div class="receipt-footer">
-            <span>Beancount 复式记账系统自动归档</span>
+            <span>Beancount 归档 · 共 {{ .Receipt.Count }} 笔 · 合计 ￥{{ printf "%.2f" .Receipt.TotalAmount }}</span>
         </div>
     </div>
 </body>

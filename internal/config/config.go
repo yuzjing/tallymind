@@ -22,6 +22,8 @@ type AppConfig struct {
 	TemplateDir       string `yaml:"template_dir"`        // 模板目录路径
 	ReceiptTemplate   string `yaml:"receipt_template"`    // 小票模板路径
 	PublicURL         string `yaml:"public_url"`          // 应用外部公网主域名
+	PanelURL          string `yaml:"panel_url"`           // 看板后端容器地址
+	PanelPath         string `yaml:"panel_path"`          // 看板后端容器地址路径
 
 	// 功能开关
 	EnableWeComWSS  bool   `yaml:"enable_wecom_wss"`
@@ -129,6 +131,9 @@ func setDefaults(cfg *Config) {
 
 	cfg.App.ReceiptTemplate = cmp.Or(cfg.App.ReceiptTemplate, "web/receipt.html")
 	cfg.App.ReceiptSignSecret = cmp.Or(cfg.App.ReceiptSignSecret, "tallymind_default_secret_key")
+
+	cfg.App.PanelURL = cmp.Or(cfg.App.PanelURL, "")
+	cfg.App.PanelPath = cmp.Or(cfg.App.PanelPath, "")
 
 	cfg.Ledger.FilePath = cmp.Or(cfg.Ledger.FilePath, "data/2026.bean")
 	cfg.Ledger.DefaultCurrency = cmp.Or(cfg.Ledger.DefaultCurrency, "CNY")

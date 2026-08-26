@@ -6,10 +6,12 @@ app:
   log_level: "debug"                # debug / info / warn / error
   log_dir: "/app/logs"             # 日志持久化输出目录
   port: "8080"                     # 监听端口
-  public_url: "https://tallymind.528900.xyz" # 外部公网访问域名
+  public_url: "https://tallymind.example.com" # 外部公网访问域名
   template_dir: "templates"        # 模板根目录
   receipt_template: ""
   receipt_sign_secret: ""          # 小票 2 小时验签私钥 
+  panel_url: "http://panel:5000"  # 看板后端容器地址 (留空自动关闭反代)
+  panel_path: "/panel"                # 动态挂载前缀 (如 /panel 或 /view)
 
   # 功能开关
   enable_http_api: true            # 是否开启通用 HTTP API
@@ -75,3 +77,8 @@ ledger:
   fallback_category: "Expenses:Uncategorized"
   fallback_account: "Assets:Pending:Unknown"
   fallback_payee: "日常消费"
+
+  # 🌟 成员与别名词典 (支持多别名、拼音缩写映射)
+  members:
+    husband: ["user", "老公","先生", "丈夫"]
+    

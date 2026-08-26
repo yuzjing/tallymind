@@ -15,8 +15,9 @@ type APIResponse struct {
 
 // ReceiptPageData H5 移动端小票渲染上下文
 type ReceiptPageData struct {
-	Receipt reporter.ReplyData `json:"receipt"`
-	NowTime string             `json:"now_time"`
+	Receipt   reporter.ReplyData `json:"receipt"`
+	NowTime   string             `json:"now_time"`
+	PanelPath string             `json:"panel_path"`
 }
 
 // ReceiptStore 小票内存缓存结构体

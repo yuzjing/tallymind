@@ -5,12 +5,13 @@ import "time"
 
 // Config 账本领域专属配置 (直接定义在 ledger 内部，消除循环导入！)
 type Config struct {
-	FilePath         string // 账本路径 (如 "data/2026.bean")
-	DefaultCurrency  string // 默认货币 (如 "CNY")
-	DefaultReporter  string // 默认记账归属人 (如 "User")
-	FallbackCategory string // 兜底支出分类 (如 "Expenses:Uncategorized")
-	FallbackAccount  string // 兜底资金账户 (如 "Assets:Pending:Unknown")
-	FallbackPayee    string // 兜底商户名 (如 "日常消费")
+	FilePath         string              // 账本路径 (如 "data/2026.bean")
+	DefaultCurrency  string              // 默认货币 (如 "CNY")
+	DefaultReporter  string              // 默认记账归属人 (如 "User")
+	FallbackCategory string              // 兜底支出分类 (如 "Expenses:Uncategorized")
+	FallbackAccount  string              // 兜底资金账户 (如 "Assets:Pending:Unknown")
+	FallbackPayee    string              // 兜底商户名 (如 "日常消费")
+	Members          map[string][]string // 列表
 }
 
 // RequestContext 传输层与系统上下文

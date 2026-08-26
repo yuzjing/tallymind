@@ -94,6 +94,9 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// 全局单例：最先初始化核心记账业务服务
+	accountingService := service.NewAccountingService(cfg, llmClient)
+
 	if cfg.App.EnableHTTPAPI {
 		if cfg.App.Env == "production" {
 			gin.SetMode(gin.ReleaseMode)
@@ -109,24 +112,19 @@ func main() {
 		}
 
 		// -------------------------------------------------------------
-		// 1. 最先初始化核心业务服务 (作为单例业务大脑)
-		// -------------------------------------------------------------
-		accountingService := service.NewAccountingService(cfg, llmClient)
-
-		// -------------------------------------------------------------
-		// 2. 初始化标准 HTTP REST 接口 (注入 accountingService)
+		// 1. 初始化标准 HTTP REST 接口 (注入 accountingService)
 		// -------------------------------------------------------------
 		txHandler := handler.NewTransactionHandler(accountingService)
 		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
 
 		// -------------------------------------------------------------
-		// 3. 初始化 H5 电子小票控制器 (注入 accountingService)
+		// 2. 初始化 H5 电子小票控制器 (注入 accountingService)
 		// -------------------------------------------------------------
 		receiptHandler := handler.NewReceiptHandler(cfg, accountingService)
 		receiptHandler.RegisterRoutes(r) // /receipt/:id
 
 		// -------------------------------------------------------------
-		// 4. 初始化企业微信 HTTP 回调插件 (注入 accountingService)
+		// 3. 初始化企业微信 HTTP 回调插件 (注入 accountingService)
 		// -------------------------------------------------------------
 		if cfg.App.EnableWeComHTTP {
 			notifierMgr := notifier.NewManager()
@@ -146,6 +144,13 @@ func main() {
 			slog.Info("已加载企业微信 HTTP 回调插件")
 		}
 
+		// 注册通用统计大盘反向代理
+		if err := handler.RegisterPanelProxy(r, cfg.App.PanelPath, cfg.App.PanelURL, cfg.App.ReceiptSignSecret); err != nil {
+			slog.Warn("⚠️ 看板反向代理挂载失败", "err", err)
+		} else if cfg.App.PanelURL != "" {
+			slog.Info("📊 统计大盘反向代理已挂载", "path", cfg.App.PanelPath, "target", cfg.App.PanelURL)
+		}
+
 		slog.Info("🌐 HTTP API 服务已启动", "port", cfg.App.Port)
 
 		// 协程启动 Gin HTTP 服务
@@ -158,11 +163,14 @@ func main() {
 	} else {
 		slog.Info("⏹️ ENABLE_HTTPAPI=false, 🌐 HTTP API 服务已关闭")
 	}
+
+	// 2. 企业微信 WSS 长连接机器人服务
 	var wsClient *wecom.WSClient
 	if cfg.App.EnableWeComWSS {
 		if cfg.WeCom.BotID != "" && cfg.WeCom.BotSecret != "" {
-			wsClient = wecom.NewWSClient(cfg.WeCom, cfg.Ledger, llmClient)
-			go wsClient.Start(ctx) // 启动企微长连接客户端
+			// 👈 传入 accountingService
+			wsClient = wecom.NewWSClient(cfg.WeCom, accountingService)
+			go wsClient.Start(ctx)
 			slog.Info("💬 企微长连接后台服务已启动")
 		} else {
 			slog.Warn("⚠️ WECOM_BOT_ID 或 WECOM_BOT_SECRET 未配置，跳过 WSS 启动")

@@ -76,7 +76,8 @@ func (s *AccountingService) Process(ctx context.Context, input AccountingInput) 
 
 	// 2. 调用 LLM 解析多模态账单
 
-	batch, err := s.llmClient.ParseTransaction(ctx, input.UserText, llmAttachment...)
+	hints := formatMemberHints(s.ledgerConfig.Members)
+	batch, err := s.llmClient.ParseTransaction(ctx, input.UserText, hints, llmAttachment...)
 	if err != nil {
 		return reporter.ReplyData{}, fmt.Errorf("AI 识别账单失败: %w", err)
 	}
@@ -172,4 +173,18 @@ func (s *AccountingService) RecordDirect(ctx context.Context, userID, sourceChan
 	}
 
 	return reporter.BuildReplyData(req, "", ""), nil
+}
+
+// formatMemberHints 辅助函数：将账本成员映射字典转为精准提示词
+func formatMemberHints(members map[string][]string) string {
+	if len(members) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("【成员与别名对照表】(必须归一化为对应标准 Key，未列出的对象自由推断如 parents, friends)：\n")
+	for standardKey, aliases := range members {
+		sb.WriteString(fmt.Sprintf("- %s: %s\n", standardKey, strings.Join(aliases, ", ")))
+	}
+	return sb.String()
 }
