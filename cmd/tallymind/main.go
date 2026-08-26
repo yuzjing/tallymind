@@ -77,7 +77,7 @@ func main() {
 	var llmClient *llm.Client
 	if cfg.App.EnableLLM {
 		var err error
-		llmClient, err = llm.NewClient(cfg.LLM)
+		llmClient, err = llm.NewClient(cfg.LLM.ToDomain())
 		if err != nil {
 			slog.Warn("⚠️ 大模型客户端未就绪 (降级运行)", "err", err)
 		} else {

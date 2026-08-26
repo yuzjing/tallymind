@@ -39,3 +39,11 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: 自动清理 GHCR 历史旧版本镜像 (保留最近 5 个)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'tallymind'
+          package-type: 'container'
+          min-versions-to-keep: 5
+          delete-only-untagged-versions: 'true' # 优先清理无 tag 的中间层

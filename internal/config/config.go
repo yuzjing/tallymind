@@ -1,13 +1,12 @@
-// internal/config/config.go
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
 
-	"cmp"
 	"tallymind/internal/ledger"
 	"tallymind/internal/llm"
 )
@@ -22,30 +21,23 @@ type AppConfig struct {
 	ReceiptSignSecret string `yaml:"receipt_sign_secret"` // 小票签名密钥
 	TemplateDir       string `yaml:"template_dir"`        // 模板目录路径
 	ReceiptTemplate   string `yaml:"receipt_template"`    // 小票模板路径
+	PublicURL         string `yaml:"public_url"`          // 应用外部公网主域名
 
-	PublicURL string `yaml:"public_url"` // 应用外部公网主域名
+	// 功能开关
+	EnableWeComWSS  bool   `yaml:"enable_wecom_wss"`
+	EnableWeComHTTP bool   `yaml:"enable_wecom_http"`
+	EnableHTTPAPI   bool   `yaml:"enable_http_api"`
+	EnableLLM       bool   `yaml:"enable_llm"`
+	EnableGitBackup bool   `yaml:"enable_git_backup"`
+	GitBackupCron   string `yaml:"git_backup_cron"`
+	EnableReporter  bool   `yaml:"enable_reporter"`
 
-	// 1. 通道独立开关
-	EnableWeComWSS  bool `yaml:"enable_wecom_wss"`  // 是否开启企微 WSS 长连接服务
-	EnableWeComHTTP bool `yaml:"enable_wecom_http"` // 是否开启企微 HTTP 回调与主动推送服务
-	EnableHTTPAPI   bool `yaml:"enable_http_api"`   // 是否开启通用 HTTP API 接口
-
-	// 2. 核心 AI 开关
-	EnableLLM bool `yaml:"enable_llm"` // 是否开启大模型自然语言解析
-
-	// 3. Git 自动 commit 备份配置
-	EnableGitBackup bool   `yaml:"enable_git_backup"` // 是否开启本地账本 Git 自动备份
-	GitBackupCron   string `yaml:"git_backup_cron"`   // 备份定时表达式 (如 "0 */6 * * *")
-
-	// 4. 定时报表与通道配置
-	EnableReporter bool     `yaml:"enable_reporter"` // 是否开启定时报表推送总开关
-	ReportChannels []string `yaml:"report_channels"` // 报表目标渠道切片 (如 ["wecom"])
-	AlertChannels  []string `yaml:"alert_channels"`  // 告警目标渠道切片
+	ReportChannels []string `yaml:"report_channels"`
+	AlertChannels  []string `yaml:"alert_channels"`
 }
 
 // WeComConfig 企业微信配置
 type WeComConfig struct {
-	// 1. 企微自建应用 / 主动推送 / HTTP 回调凭证
 	CorpID          string `yaml:"corp_id"`
 	AgentID         int64  `yaml:"agent_id"`
 	Secret          string `yaml:"secret"`
@@ -53,50 +45,89 @@ type WeComConfig struct {
 	EncodingAESKey  string `yaml:"encoding_aes_key"`
 	SuccessTemplate string `yaml:"success_template"`
 	FailureTemplate string `yaml:"failure_template"`
+	BotID           string `yaml:"bot_id"`
+	BotSecret       string `yaml:"bot_secret"`
+}
 
-	// 2. 企微 API 模式机器人 (WSS 长连接专有)
-	BotID     string `yaml:"bot_id"`
-	BotSecret string `yaml:"bot_secret"`
+// LLMProviderConfig 专门用于反序列化 YAML 的 Provider DTO
+type LLMProviderConfig struct {
+	APIKey  string `yaml:"api_key"`
+	BaseURL string `yaml:"base_url"`
+	Model   string `yaml:"model"`
+}
+
+// LLMConfig 专门用于反序列化 YAML 的 LLM DTO
+type LLMConfig struct {
+	MaxTokens        int64               `yaml:"max_tokens"`
+	Temperature      float64             `yaml:"temperature"`
+	TopP             float64             `yaml:"top_p"`
+	FrequencyPenalty float64             `yaml:"frequency_penalty"`
+	PresencePenalty  float64             `yaml:"presence_penalty"`
+	Providers        []LLMProviderConfig `yaml:"providers"`
+}
+
+// ToDomain 将 YAML 配置转换为纯净的 llm.Config 领域实体
+func (c *LLMConfig) ToDomain() llm.Config {
+	providers := make([]llm.Provider, len(c.Providers))
+	for i, p := range c.Providers {
+		providers[i] = llm.Provider{
+			APIKey:  p.APIKey,
+			BaseURL: p.BaseURL,
+			Model:   p.Model,
+		}
+	}
+
+	return llm.Config{
+		Providers:        providers,
+		MaxTokens:        c.MaxTokens,
+		Temperature:      c.Temperature,
+		TopP:             c.TopP,
+		FrequencyPenalty: c.FrequencyPenalty,
+		PresencePenalty:  c.PresencePenalty,
+	}
 }
 
 // Config 全局顶层配置结构体
 type Config struct {
 	App    AppConfig     `yaml:"app"`
 	Ledger ledger.Config `yaml:"ledger"`
-	LLM    llm.Config    `yaml:"llm"`
+	LLM    LLMConfig     `yaml:"llm"`
 	WeCom  WeComConfig   `yaml:"wecom"`
 }
 
-// Load 直接读取并解析 YAML 配置文件
+// Load 读取并解析 YAML 配置文件 (支持环境变量替换)
 func Load(configPath ...string) (*Config, error) {
 	path := "config.yaml"
 	if len(configPath) > 0 && configPath[0] != "" {
 		path = configPath[0]
 	}
 
-	data, err := os.ReadFile(path)
+	rawBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("读取配置文件 [%s] 失败: %w", path, err)
 	}
 
+	// ⭐️ 核心增强：自动支持环境变量替换 (如 ${GEMINI_API_KEY})
+	expandedYAML := os.ExpandEnv(string(rawBytes))
+
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.Unmarshal([]byte(expandedYAML), &cfg); err != nil {
 		return nil, fmt.Errorf("解析 YAML 配置失败: %w", err)
 	}
 
-	// 默认值保底注入 (防止配置文件中某项未填)
+	// 默认值保底注入
 	setDefaults(&cfg)
 
 	return &cfg, nil
 }
 
-// setDefaults 为未显式配置的字段提供安全默认值
 func setDefaults(cfg *Config) {
 	cfg.App.Env = cmp.Or(cfg.App.Env, "development")
 	cfg.App.LogLevel = cmp.Or(cfg.App.LogLevel, "info")
 	cfg.App.Port = cmp.Or(cfg.App.Port, "8080")
 	cfg.App.TemplateDir = cmp.Or(cfg.App.TemplateDir, "templates")
-	cfg.App.ReceiptTemplate = cmp.Or(cfg.App.ReceiptTemplate, "localhost")
+
+	cfg.App.ReceiptTemplate = cmp.Or(cfg.App.ReceiptTemplate, "web/receipt.html")
 	cfg.App.ReceiptSignSecret = cmp.Or(cfg.App.ReceiptSignSecret, "tallymind_default_secret_key")
 
 	cfg.Ledger.FilePath = cmp.Or(cfg.Ledger.FilePath, "data/2026.bean")
@@ -108,4 +139,8 @@ func setDefaults(cfg *Config) {
 
 	cfg.WeCom.SuccessTemplate = cmp.Or(cfg.WeCom.SuccessTemplate, "wecom/expense_success.yaml")
 	cfg.WeCom.FailureTemplate = cmp.Or(cfg.WeCom.FailureTemplate, "wecom/expense_fail.yaml")
+
+	if cfg.LLM.MaxTokens == 0 {
+		cfg.LLM.MaxTokens = 4096
+	}
 }
