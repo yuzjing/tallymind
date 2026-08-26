@@ -106,7 +106,7 @@ func buildSystemPrompt() string {
 2. date: YYYY-MM-DD，结合今日(%[1]s)推算相对日期，未提及设为 ""。
 3. payee: 店铺/商户/机构名称；narration: 商品明细或备注说明；type: "expense"(支出), "income"(收入), "refund"(退款)。
 4. category: Beancount 科目，日常以 Expenses: 或 Income: 开头（如 Expenses:Food:Drinks）；期初建账/初始资金注入使用 Equity:Opening-Balances。
-5. account: 资金结算账户，以 Assets: 或 Liabilities: 开头（如 Assets:WeChat:Wallet, Liabilities:Alipay:Huabei，银行卡用大写英文缩写如 Liabilities:CreditCard:CMB, Assets:Bank:ICBC，无依据设为 ""）。
+5. account: 结算账户(如 Assets:Bank:CMB, Liabilities:CreditCard:ICBC, Assets:WeChat:Wallet, Liabilities:Alipay:Huabei)。【必须见图文明确凭据才提取，严禁根据聊天渠道臆测，无凭据必须为 ""】。
 6. tags: 字符串数组。提取特征标签（如周期扣费 "#recurring"、待报销 "#reimbursement"、特定场景如 "#medical"、"#renovation" 等），无特征设为 []。
 7. metadata (无依据设为 ""):
    - owner: 实际消费归属人 (如 "wife", "husband"，默认 "")。
@@ -125,7 +125,7 @@ func buildSystemPrompt() string {
       "payee": "蜜雪冰城(中关村店)",
       "narration": "冰鲜柠檬水",
       "category": "Expenses:Food:Drinks",
-      "account": "Assets:WeChat:Wallet",
+      "account": "",
       "type": "expense",
       "tags": [],
       "metadata": {

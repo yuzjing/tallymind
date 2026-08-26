@@ -121,7 +121,7 @@ func (p *ProviderPool) NextProvider() (Provider, bool) {
 	if len(p.providers) == 0 {
 		return Provider{}, false
 	}
-	idx := p.index.Add(1)
+	idx := p.index.Add(1) - 1
 	target := p.providers[uint32(idx)%uint32(len(p.providers))]
 	return target, true
 }

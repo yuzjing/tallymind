@@ -1,38 +1,37 @@
 // internal/reporter/types.go
 package reporter
 
-import (
-	"tallymind/internal/ledger"
-)
-
 // TransactionItem 单笔明细的纯数据清洗视图
 type TransactionItem struct {
-	Date          string  `json:"date"`
-	Payee         string  `json:"payee"`
-	Narration     string  `json:"narration"`
-	Category      string  `json:"category"`
-	ShortCategory string  `json:"short_category"` // 末级科目简称 (如 Dining)
-	Account       string  `json:"account"`
-	Amount        float64 `json:"amount"`
-	Currency      string  `json:"currency"`
-	DisplayName   string  `json:"display_name"` // 商户优先，备注兜底
-	Reporter      string  `json:"reporter,omitempty"`
-	Owner         string  `json:"owner,omitempty"`
+	Date          string   `json:"date"`
+	Payee         string   `json:"payee"`
+	Narration     string   `json:"narration"`
+	Category      string   `json:"category"`
+	ShortCategory string   `json:"short_category"` // 末级科目简称 (如 Dining)
+	Account       string   `json:"account"`
+	Amount        float64  `json:"amount"`
+	Currency      string   `json:"currency"`
+	DisplayName   string   `json:"display_name"` // 商户优先，备注兜底
+	Reporter      string   `json:"reporter,omitempty"`
+	Owner         string   `json:"owner,omitempty"`
+	Beneficiary   string   `json:"beneficiary,omitempty"`    // 受益人 (如 wife, baby)
+	SourceChannel string   `json:"source_channel,omitempty"` // 来源渠道
+	Link          string   `json:"link,omitempty"`           // ^msg-xxxx
+	Tags          []string `json:"tags,omitempty"`
 }
 
 // ReplyData 即时记账回执数据模型 (纯数据字段，零 UI 格式化字符串！)
 type ReplyData struct {
-	Count           int                       `json:"count"`
-	TotalAmount     float64                   `json:"total_amount"`
-	Currency        string                    `json:"currency"`
-	IsSingle        bool                      `json:"is_single"`
-	PrimaryName     string                    `json:"primary_name"`     // 主展示名称 (单笔时为商户，多笔时为首笔商户)
-	PrimaryCategory string                    `json:"primary_category"` // 主分类简称
-	Items           []TransactionItem         `json:"items"`            // 全量明细列表
-	FirstItem       TransactionItem           `json:"first_item"`       // 单笔快捷访问
-	JumpURL         string                    `json:"jump_url,omitempty"`
-	ImageURL        string                    `json:"image_url,omitempty"`
-	Batch           *ledger.BatchTransactions `json:"batch"`
+	Count           int               `json:"count"`
+	TotalAmount     float64           `json:"total_amount"`
+	Currency        string            `json:"currency"`
+	IsSingle        bool              `json:"is_single"`
+	PrimaryName     string            `json:"primary_name"`     // 主展示名称 (单笔时为商户，多笔时为首笔商户)
+	PrimaryCategory string            `json:"primary_category"` // 主分类简称
+	Items           []TransactionItem `json:"items"`            // 全量明细列表
+	FirstItem       TransactionItem   `json:"first_item"`       // 单笔快捷访问
+	JumpURL         string            `json:"jump_url,omitempty"`
+	ImageURL        string            `json:"image_url,omitempty"`
 }
 
 // WeeklyReportData 周报纯数据统计模型

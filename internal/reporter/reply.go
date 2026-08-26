@@ -39,6 +39,9 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			DisplayName:   displayName,
 			Reporter:      cmp.Or(tx.Meta.Reporter, "User"),
 			Owner:         cmp.Or(tx.Meta.Owner, "User"),
+			Beneficiary:   tx.Meta.Beneficiary,
+			SourceChannel: tx.Meta.SourceChannel,
+			Tags:          tx.Tags,
 		})
 
 	}
@@ -54,16 +57,25 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		FirstItem:       items[0],
 		JumpURL:         jumpURL,
 		ImageURL:        imageURL,
-		Batch:           batch,
 	}
 }
 
 func getShortCategory(fullCategory string) string {
-	parts := strings.Split(fullCategory, ":")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
+	if fullCategory == "" {
+		return "未分类"
 	}
-	return fullCategory
+
+	// 1. 剥离顶层的 Expenses: 或 Income:
+	trimmed := fullCategory
+	for _, prefix := range []string{"Expenses:", "Income:", "Liabilities:", "Assets:"} {
+		if after, ok := strings.CutPrefix(trimmed, prefix); ok {
+			trimmed = after
+			break
+		}
+	}
+
+	// 2. 转换冒号为更直观的箭头层级: 如 "Auto:Maintenance" -> "Auto > Maintenance"
+	return strings.ReplaceAll(trimmed, ":", " > ")
 }
 
 // SummaryHeadline 生成标准的一句话极简总结 (单笔/多笔自适应，全系统通用)
