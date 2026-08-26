@@ -2,13 +2,16 @@
 package handler
 
 import (
+	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"tallymind/internal/config"
+	"tallymind/internal/crypto"
 	"tallymind/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -46,7 +49,17 @@ func (h *ReceiptHandler) RenderReceipt(c *gin.Context) {
 	// 计算动态看板跳转链接：仅当配置了 URL 和 Path 时才拼接
 	panelPath := ""
 	if strings.TrimSpace(h.cfg.App.PanelURL) != "" && strings.TrimSpace(h.cfg.App.PanelPath) != "" {
-		panelPath = "/" + strings.Trim(h.cfg.App.PanelPath, "/") + "/"
+		ssoToken := crypto.GenerateSignedToken(
+			h.cfg.App.ReceiptSignSecret,
+			"panel_sso",
+			2*time.Hour,
+			crypto.DefaultTokenSignLen,
+		)
+		cleanPath := "/" + strings.Trim(h.cfg.App.PanelPath, "/")
+		// 直连大盘首页并附带 Token
+		panelPath = fmt.Sprintf("%s/?token=%s", cleanPath, ssoToken)
+
+		slog.Debug("🧾 [Receipt] 动态渲染小票大盘直达链接", "panel_path", panelPath)
 	}
 
 	// 2. 动态拼接模板路径

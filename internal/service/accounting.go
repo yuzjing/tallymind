@@ -62,7 +62,7 @@ func NewAccountingService(cfg *config.Config, llmClient *llm.Client) *Accounting
 	}
 }
 
-// Process 多模态智能记账用例：AI 结构化解析 ➔ 账本落盘 ➔ 生成小票并暂存
+// Process 多模态智能记账用例：AI 结构化解析 ➔ 实体反查与双重保底 ➔ 账本落盘 ➔ 生成小票并暂存
 func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (reporter.ReplyData, error) {
 	// 1. 防腐层适配：将通用业务 Attachment 转换为大模型网关所需的 DTO 结构
 	llmAttachments := make([]llm.Attachment, len(in.Attachments))
@@ -74,8 +74,8 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 		}
 	}
 
-	// 2. 身份归一化与业务上下文提取
-	currentActor := normalizeActor(in.UserID, s.ledgerConfig.Members, s.ledgerConfig.DefaultReporter)
+	// 2. 身份归一化与业务上下文提取 (从 in.UserID 反查出标准 Key，如 ZiYuZhao -> zhaozhao)
+	currentActor := resolveActor(in.UserID, s.ledgerConfig.Members, s.ledgerConfig.DefaultReporter)
 	contextHints := formatContextHints(currentActor, s.ledgerConfig.Members)
 
 	// 3. 调用大模型进行多模态语义解析
@@ -85,6 +85,28 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 	}
 	if batch == nil || len(batch.Transactions) == 0 {
 		return reporter.ReplyData{}, fmt.Errorf("未识别出有效记账明细")
+	}
+
+	// ⭐️ 3.5 智能实体反查与双重保底 (彻底消除 husband、member_a 或空值漏洞)
+	for i := range batch.Transactions {
+		tx := &batch.Transactions[i]
+
+		// 记账人 (reporter) 强制由通信协议层判定
+		tx.Meta.Reporter = currentActor
+
+		// 出资人 (owner)：空值保底为发信人；有值则反查字典 (表外自由推断如 parents 原样保留)
+		if strings.TrimSpace(tx.Meta.Owner) == "" {
+			tx.Meta.Owner = currentActor
+		} else {
+			tx.Meta.Owner = resolveActor(tx.Meta.Owner, s.ledgerConfig.Members, currentActor)
+		}
+
+		// 受益人 (beneficiary)：空值保底为发信人；有值则反查字典
+		if strings.TrimSpace(tx.Meta.Beneficiary) == "" {
+			tx.Meta.Beneficiary = currentActor
+		} else {
+			tx.Meta.Beneficiary = resolveActor(tx.Meta.Beneficiary, s.ledgerConfig.Members, currentActor)
+		}
 	}
 
 	// 4. 组装审计上下文并持久化写入底层账本
@@ -198,7 +220,7 @@ func formatContextHints(currentActor string, members map[string][]string) string
 	if len(members) > 0 {
 		sb.WriteString("- 实体标准Key与别名对照表：\n")
 		for standardKey, aliases := range members {
-			sb.WriteString(fmt.Sprintf("  • %s: %s\n", standardKey, strings.Join(aliases, ", ")))
+			fmt.Fprintf(&sb, "  • %s: %s\n", standardKey, strings.Join(aliases, ", "))
 		}
 	}
 	return sb.String()
@@ -212,4 +234,27 @@ func extractFirstImageURL(atts []Attachment) string {
 		}
 	}
 	return ""
+}
+
+// resolveActor 根据 members 字典反查标准 Key
+func resolveActor(rawInput string, members map[string][]string, fallback string) string {
+	target := strings.TrimSpace(rawInput)
+	if target == "" {
+		return cmp.Or(fallback, "unknown")
+	}
+
+	// 1. 遍历 members 字典进行全量反查 (支持大小写不敏感匹配)
+	for standardKey, aliases := range members {
+		if strings.EqualFold(target, standardKey) {
+			return standardKey
+		}
+		for _, alias := range aliases {
+			if strings.EqualFold(target, alias) {
+				return standardKey
+			}
+		}
+	}
+
+	// 2. 如果字典里没有 (如 AI 自由推断的 "parents", "friends", "colleague")，原样保留
+	return target
 }

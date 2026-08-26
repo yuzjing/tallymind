@@ -113,9 +113,9 @@ func (c *Client) buildSystemPrompt(contextHints string) string {
 4. category: Beancount 科目，日常以 Expenses: 或 Income: 开头（如 Expenses:Food:Drinks）；期初建账/初始资金注入使用 Equity:Opening-Balances。
 5. account: 结算账户(如 Assets:Bank:CMB, Liabilities:CreditCard:ICBC, Assets:WeChat:Wallet, Liabilities:Alipay:Huabei)。【必须见图文明确凭据才提取，严禁根据聊天渠道臆测，无凭据必须为 ""】。
 6. tags: 字符串数组。提取特征标签（如周期扣费 "#recurring"、待报销 "#reimbursement"、特定场景如 "#medical"、"#renovation" 等），无特征设为 []。
-7. metadata  (全字段必填或规范留空):
-   - owner: 实际出资/付款人【必填】。默认填当前发信人；仅在凭证/文本明确指示他人付款时归一化为【实体映射表】标准Key。
-   - beneficiary: 实际消费受益人【必填】。默认填当前发信人；若文本或小票发票明确为他人消费，优先归一化为【实体映射表】标准Key，表外对象推断为英文/拼音 (如 "parents", "colleague", "friends")。
+7. metadata  (无依据一律设为 ""):
+   - owner: 出资人/付款人。若提及他人出资优先归一化为【实体映射表】标准Key；不能推断付款人设为 ""。
+   - beneficiary: 实际受益人。若有明确受益对象，优先归一化为【实体映射表】标准Key；表外对象自由推断英文/拼音 (如 "parents", "colleague", "friends", "pet")；不能推断设为 ""。
    - invoice_status: 电子发票填 "done"，需开票/待报销填 "pending"，无发票设为 ""。
    - original_amount / discount_amount: 原价与优惠减免金额 (无则设为 "")。
    - time / location / link: 小票具体时间(HH:MM:SS)、分店地点、订单流水号 (无则设为 "")。
@@ -135,8 +135,8 @@ func (c *Client) buildSystemPrompt(contextHints string) string {
       "type": "expense",
       "tags": [],
       "metadata": {
-        "owner": "member_a",
-        "beneficiary": "member_a",
+        "owner": "",
+        "beneficiary": "",
         "invoice_status": "",
         "original_amount": "6.00",
         "discount_amount": "2.00",
