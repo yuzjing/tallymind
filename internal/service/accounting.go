@@ -16,42 +16,43 @@ import (
 	"tallymind/internal/reporter"
 )
 
-// BatchTransactions 结构化记账入参 (类型别名：让外层 Handler 无需 import ledger)
+// BatchTransactions 结构化账单批次 (映射底层领域实体，屏蔽外层导入)
 type BatchTransactions = ledger.BatchTransactions
 
-// Attachment 业务层通用多模态附件 (图/音/档)
-type Attachment = llm.Attachment
-
-// AccountingInput 记账用例的统一输入
-type AccountingInput struct {
-	// ========================
-	// 1. 核心业务荷载 (必须)
-	// ========================
-	UserText    string       // 用户输入文本
-	Attachments []Attachment // 多模态附件列表 (图片/语音/文档)
-
-	// ========================
-	// 2. 调用上下文与审计 (全部可选，留空自动智能兜底)
-	// ========================
-	MessageID     string            // 消息/小票唯一ID (留空自动生成 UUID/时间戳)
-	UserID        string            // 记账人 (留空自动取默认记账人)
-	MessageTime   time.Time         // 消息时间 (留空自动取当前 time.Now())
-	SourceChannel string            // 渠道标识
-	Location      string            // 地理位置 (可选)
-	ExtraMetadata map[string]string // 渠道自定义扩展键值对 (可选)
-
+// Attachment 通用多模态附件定义 (支持图片、文档、音频等各类媒体)
+type Attachment struct {
+	Type     string `json:"type"`                // 附件类型: "image_url", "audio", "document"
+	URL      string `json:"url"`                 // 资源直链、DataURI 或本地路径
+	MimeType string `json:"mime_type,omitempty"` // 媒体 MIME 类型 (可选)
 }
 
-// AccountingService 记账核心业务管道
+// AccountingInput 统一记账输入载体 (通用数据传输对象 DTO，与具体渠道完全解耦)
+type AccountingInput struct {
+	// 1. 调用上下文与审计追踪元数据
+	UserID        string            // 操作人 / 发信人标识
+	SourceChannel string            // 入站渠道来源 (如 "wecom", "telegram", "rest_api")
+	MessageID     string            // 消息或单据唯一标识 (用于幂等与小票溯源)
+	MessageTime   time.Time         // 消息产生时间
+	Location      string            // 地理位置信息 (可选)
+	ExtraMetadata map[string]string // 渠道扩展元数据 (可选)
+
+	// 2. 核心业务荷载
+	UserText    string       // 用户输入的自然语言或附加说明
+	Attachments []Attachment // 多模态附件列表
+}
+
+// AccountingService 核心记账业务应用服务 (系统主业务管道门面)
 type AccountingService struct {
 	cfg          *config.Config
 	llmClient    *llm.Client
 	ledgerConfig ledger.Config
-	// 小票内存缓存与锁 (收归业务层管理)
+
+	// 内存小票临时状态缓存 (并发安全)
 	mu       sync.RWMutex
 	receipts map[string]reporter.ReplyData
 }
 
+// NewAccountingService 实例化记账核心应用服务
 func NewAccountingService(cfg *config.Config, llmClient *llm.Client) *AccountingService {
 	return &AccountingService{
 		cfg:          cfg,
@@ -61,64 +62,90 @@ func NewAccountingService(cfg *config.Config, llmClient *llm.Client) *Accounting
 	}
 }
 
-// Process 核心用例：AI提取 -> 账本存盘 -> 生成签名小票 -> 存入内存
-func (s *AccountingService) Process(ctx context.Context, input AccountingInput) (reporter.ReplyData, error) {
-	// 1. 将业务层 Attachment 转为 LLM 适配器所需的格式
-
-	llmAttachment := make([]llm.Attachment, len(input.Attachments))
-	for i, att := range input.Attachments {
-		llmAttachment[i] = llm.Attachment{
+// Process 多模态智能记账用例：AI 结构化解析 ➔ 账本落盘 ➔ 生成小票并暂存
+func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (reporter.ReplyData, error) {
+	// 1. 防腐层适配：将通用业务 Attachment 转换为大模型网关所需的 DTO 结构
+	llmAttachments := make([]llm.Attachment, len(in.Attachments))
+	for i, att := range in.Attachments {
+		llmAttachments[i] = llm.Attachment{
 			Type:     att.Type,
 			URL:      att.URL,
 			MimeType: att.MimeType,
 		}
 	}
 
-	// 2. 调用 LLM 解析多模态账单
+	// 2. 身份归一化与业务上下文提取
+	currentActor := normalizeActor(in.UserID, s.ledgerConfig.Members, s.ledgerConfig.DefaultReporter)
+	contextHints := formatContextHints(currentActor, s.ledgerConfig.Members)
 
-	hints := formatMemberHints(s.ledgerConfig.Members)
-	batch, err := s.llmClient.ParseTransaction(ctx, input.UserText, hints, llmAttachment...)
+	// 3. 调用大模型进行多模态语义解析
+	batch, err := s.llmClient.ParseTransaction(ctx, in.UserText, contextHints, llmAttachments...)
 	if err != nil {
-		return reporter.ReplyData{}, fmt.Errorf("AI 识别账单失败: %w", err)
+		return reporter.ReplyData{}, fmt.Errorf("AI 解析账单失败: %w", err)
 	}
 	if batch == nil || len(batch.Transactions) == 0 {
 		return reporter.ReplyData{}, fmt.Errorf("未识别出有效记账明细")
 	}
 
-	// 3. 在 service 内部转换为 ledger 审计上下文并落盘 (外层零感知 ledger)
+	// 4. 组装审计上下文并持久化写入底层账本
 	reqCtx := ledger.RequestContext{
-		UserID:        input.UserID,
-		SourceChannel: input.SourceChannel,
-		MessageID:     input.MessageID,
-		MessageTime:   input.MessageTime,
-		Location:      input.Location,
+		UserID:        currentActor,
+		SourceChannel: cmp.Or(in.SourceChannel, "api"),
+		MessageID:     in.MessageID,
+		MessageTime:   in.MessageTime,
+		Location:      in.Location,
 	}
 	if err := ledger.AppendBatchTransactions(s.ledgerConfig.FilePath, batch, s.ledgerConfig, reqCtx); err != nil {
 		return reporter.ReplyData{}, fmt.Errorf("账本存盘失败: %w", err)
 	}
 
-	// 3. 生成小票链接并存入内存供 H5 查看
-	jumpURL := s.BuildReceiptURL(input.MessageID)
-	previewImage := extractFirstImage(input.Attachments)
-	replyData := reporter.BuildReplyData(batch, jumpURL, previewImage)
-	s.SaveReceipt(input.MessageID, replyData)
-	return replyData, nil
+	// 5. 若具备唯一消息 ID，生成带时效签名的 H5 电子小票并放入缓存
+	var jumpURL string
+	if in.MessageID != "" {
+		jumpURL = s.BuildReceiptURL(in.MessageID)
+		previewImage := extractFirstImageURL(in.Attachments)
+		replyData := reporter.BuildReplyData(batch, jumpURL, previewImage)
+		s.SaveReceipt(in.MessageID, replyData)
+		return replyData, nil
+	}
 
+	// 免小票追踪场景直接返回基础展示数据
+	return reporter.BuildReplyData(batch, "", ""), nil
 }
 
-// BuildReceiptURL 生成 2 小时安全签名小票链接
-func (s *AccountingService) BuildReceiptURL(receiptID string) string {
+// RecordDirect 直接结构化记账用例 (供标准 REST API 等免 AI 场景直接持久化)
+func (s *AccountingService) RecordDirect(ctx context.Context, userID, sourceChannel string, req *BatchTransactions) (reporter.ReplyData, error) {
+	if req == nil || len(req.Transactions) == 0 {
+		return reporter.ReplyData{}, fmt.Errorf("交易批次为空，无需存盘")
+	}
+
+	currentActor := normalizeActor(userID, s.ledgerConfig.Members, s.ledgerConfig.DefaultReporter)
+	reqCtx := ledger.RequestContext{
+		UserID:        currentActor,
+		SourceChannel: cmp.Or(sourceChannel, "rest_api"),
+		MessageTime:   time.Now(),
+	}
+
+	if err := ledger.AppendBatchTransactions(s.ledgerConfig.FilePath, req, s.ledgerConfig, reqCtx); err != nil {
+		return reporter.ReplyData{}, fmt.Errorf("账本存盘失败: %w", err)
+	}
+
+	return reporter.BuildReplyData(req, "", ""), nil
+}
+
+// BuildReceiptURL 生成带安全签名与时效控制的小票访问 URL
+func (s *AccountingService) BuildReceiptURL(id string) string {
 	token := crypto.GenerateSignedToken(
 		s.cfg.App.ReceiptSignSecret,
-		receiptID,
+		id,
 		2*time.Hour,
 		crypto.DefaultTokenSignLen,
 	)
 	baseURL := strings.TrimRight(s.cfg.App.PublicURL, "/")
-	return fmt.Sprintf("%s/receipt/%s?token=%s", baseURL, receiptID, token)
+	return fmt.Sprintf("%s/receipt/%s?token=%s", baseURL, id, token)
 }
 
-// SaveReceipt 保存小票展示数据 (容量超 50 自动淘汰最老数据)
+// SaveReceipt 保存小票展示数据 (基于上限自动淘汰最老数据防内存泄漏)
 func (s *AccountingService) SaveReceipt(id string, data reporter.ReplyData) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -132,8 +159,7 @@ func (s *AccountingService) SaveReceipt(id string, data reporter.ReplyData) {
 	s.receipts[id] = data
 }
 
-// GetReceipt 供 H5 控制器读取小票数据并验签
-
+// GetReceipt 供 H5 控制器读取小票数据并执行安全验签
 func (s *AccountingService) GetReceipt(id, token string) (reporter.ReplyData, bool) {
 	if !crypto.VerifySignedToken(s.cfg.App.ReceiptSignSecret, id, token) {
 		return reporter.ReplyData{}, false
@@ -145,46 +171,45 @@ func (s *AccountingService) GetReceipt(id, token string) (reporter.ReplyData, bo
 	return data, ok
 }
 
-// extractFirstImage 从通用附件中提取首张图片
-func extractFirstImage(atts []Attachment) string {
+// normalizeActor 实体身份归一化：根据配置别名表将原始 UserID 映射为标准实体 Key
+func normalizeActor(rawID string, members map[string][]string, fallback string) string {
+	if rawID == "" {
+		return cmp.Or(fallback, "unknown")
+	}
+	for standardKey, aliases := range members {
+		if strings.EqualFold(rawID, standardKey) {
+			return standardKey
+		}
+		for _, alias := range aliases {
+			if strings.EqualFold(rawID, alias) {
+				return standardKey
+			}
+		}
+	}
+	return rawID
+}
+
+// formatContextHints 构造注入给大模型的通用业务上下文与实体对照提示词
+func formatContextHints(currentActor string, members map[string][]string) string {
+	var sb strings.Builder
+	sb.WriteString("【业务上下文与实体别名映射】：\n")
+	sb.WriteString(fmt.Sprintf("- 当前操作人/发信人 (Reporter): %s\n", currentActor))
+
+	if len(members) > 0 {
+		sb.WriteString("- 实体标准Key与别名对照表：\n")
+		for standardKey, aliases := range members {
+			sb.WriteString(fmt.Sprintf("  • %s: %s\n", standardKey, strings.Join(aliases, ", ")))
+		}
+	}
+	return sb.String()
+}
+
+// extractFirstImageURL 从多模态附件列表中提取首张可用图片作为快照
+func extractFirstImageURL(atts []Attachment) string {
 	for _, a := range atts {
 		if a.Type == "image" || a.Type == "image_url" {
 			return a.URL
 		}
 	}
 	return ""
-}
-
-// RecordDirect 直接结构化记账 (内部自动组装 RequestContext，调用方零感知 ledger)
-func (s *AccountingService) RecordDirect(ctx context.Context, userID, sourceChannel string, req *BatchTransactions) (reporter.ReplyData, error) {
-	if req == nil || len(req.Transactions) == 0 {
-		return reporter.ReplyData{}, fmt.Errorf("交易批次为空，无需存盘")
-	}
-
-	// 在 service 内部组装审计上下文并落盘
-	reqCtx := ledger.RequestContext{
-		UserID:        cmp.Or(userID, s.ledgerConfig.DefaultReporter),
-		SourceChannel: cmp.Or(sourceChannel, "rest_api"),
-		MessageTime:   time.Now(),
-	}
-
-	if err := ledger.AppendBatchTransactions(s.ledgerConfig.FilePath, req, s.ledgerConfig, reqCtx); err != nil {
-		return reporter.ReplyData{}, fmt.Errorf("账本存盘失败: %w", err)
-	}
-
-	return reporter.BuildReplyData(req, "", ""), nil
-}
-
-// formatMemberHints 辅助函数：将账本成员映射字典转为精准提示词
-func formatMemberHints(members map[string][]string) string {
-	if len(members) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	sb.WriteString("【成员与别名对照表】(必须归一化为对应标准 Key，未列出的对象自由推断如 parents, friends)：\n")
-	for standardKey, aliases := range members {
-		sb.WriteString(fmt.Sprintf("- %s: %s\n", standardKey, strings.Join(aliases, ", ")))
-	}
-	return sb.String()
 }
