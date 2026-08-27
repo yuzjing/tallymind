@@ -37,6 +37,15 @@ func (h *ReportHandler) RegisterRoutes(r gin.IRouter) {
 func (h *ReportHandler) RenderReport(c *gin.Context) {
 	token := c.Query("token")
 	period := c.DefaultQuery("period", "weekly")
+	dateStr := c.Query("date")
+
+	// 解析基准时间，未传则默认取当前时间
+	targetTime := time.Now()
+	if dateStr != "" {
+		if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+			targetTime = t
+		}
+	}
 
 	cookie, cookieErr := c.Cookie(ReportSessionCookieName)
 
@@ -73,7 +82,7 @@ func (h *ReportHandler) RenderReport(c *gin.Context) {
 	}
 
 	//  实时按需调用计算引擎
-	reportData, err := h.accountService.GetPeriodicReport(c.Request.Context(), period, time.Now())
+	reportData, err := h.accountService.GetPeriodicReport(c.Request.Context(), period, targetTime)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "实时计算报表失败: %v", err)
 		return

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>📊 {{ .Title }} - TallyMind</title>
+    <title>{{ .Title }} - TallyMind</title>
     <!-- 轻量 ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
@@ -43,15 +43,67 @@
             border-bottom: 2px dashed var(--border-color);
         }
         .report-title { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
-        .report-time { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+        .report-time { font-size: 13px; color: var(--text-muted); margin-top: 6px; font-weight: 500; }
         
         .tabs-container { padding: 14px 16px 4px; }
         .tabs { display: flex; background: #f1f5f9; padding: 3px; border-radius: 10px; border: 1px solid var(--border-color); }
         .tab-item { flex: 1; text-align: center; padding: 8px 0; font-size: 13px; font-weight: 600; color: var(--text-muted); text-decoration: none; border-radius: 8px; }
         .tab-item.active { background: #ffffff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 
+        /* ⭐️ 核心：时间穿梭栏与原生日期选择器容器 */
+        .period-stepper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            padding: 6px 8px;
+            background: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        .nav-btn {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 6px;
+            border-radius: 4px;
+        }
+        .nav-btn:active { background: #f1f5f9; }
+        .nav-btn.disabled { color: #cbd5e1; cursor: not-allowed; }
+
+        /* 可点击的日期唤起区 */
+        .date-picker-trigger {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .date-picker-trigger:active { background: #e2e8f0; }
+        .date-display-text {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+        /* 透明覆盖在文字上的原生 Input，点击直接调起系统级日历 */
+        .hidden-date-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+            font-size: 16px; /* 防止 iOS 自动缩放 */
+        }
+
         .report-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
-        .section-card { background: #ffffff; border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; }
+        .section-card { background: #ffffff; border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.02); }
         
         .kpi-main { text-align: center; padding: 4px 0 12px; }
         .kpi-label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
@@ -63,12 +115,15 @@
 
         .card-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
         .chart-box { width: 100%; }
-        .top-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #f8fafc; font-size: 13px; }
+        
+        .top-list-container { counter-reset: rank-counter; }
+        .top-row { counter-increment: rank-counter; display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #f8fafc; font-size: 13px; }
         .top-row:last-child { border-bottom: none; }
         .rank-num { width: 20px; height: 20px; background: #f1f5f9; color: #475569; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; margin-right: 8px; }
+        .rank-num::before { content: counter(rank-counter); }
 
         .report-actions { padding: 14px 16px; border-top: 1px solid var(--border-color); }
-        .btn-panel { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 11px 0; background: var(--primary); color: #ffffff; text-decoration: none; border-radius: 10px; font-size: 14px; font-weight: 600; }
+        .btn-panel { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 11px 0; background: var(--primary); color: #ffffff; text-decoration: none; border-radius: 10px; font-size: 14px; font-weight: 600; box-shadow: 0 4px 6px -1px rgba(37,99,235,0.2); }
         .report-footer { background: #f9fafb; padding: 12px 16px; text-align: center; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border-color); }
     </style>
 </head>
@@ -76,17 +131,43 @@
     <div class="report-container">
         <!-- 1. 报表头部 -->
         <div class="report-header">
-            <div class="report-title">📊 TallyMind 财务分析报表</div>
+            <div class="report-title">TallyMind 财务分析报表</div>
             <div class="report-time">{{ .Title }} · {{ .DateRange }}</div>
         </div>
 
-        <!-- 2. 周期切换 Tab -->
+        <!-- 2. 周期切换 Tab 与 日期交互条 -->
         <div class="tabs-container">
             <div class="tabs">
-                <a href="?period=weekly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "weekly" }}active{{ end }}">周报</a>
-                <a href="?period=monthly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "monthly" }}active{{ end }}">月报</a>
-                <a href="?period=quarterly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "quarterly" }}active{{ end }}">季报</a>
-                <a href="?period=yearly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "yearly" }}active{{ end }}">年报</a>
+                <a href="?period=weekly&date={{ .TargetDate }}&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "weekly" }}active{{ end }}">周报</a>
+                <a href="?period=monthly&date={{ .TargetDate }}&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "monthly" }}active{{ end }}">月报</a>
+                <a href="?period=quarterly&date={{ .TargetDate }}&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "quarterly" }}active{{ end }}">季报</a>
+                <a href="?period=yearly&date={{ .TargetDate }}&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "yearly" }}active{{ end }}">年报</a>
+            </div>
+
+            <!-- ⭐️ 交互式时间穿梭器 -->
+            <div class="period-stepper">
+                <!-- ‹ 上一期 -->
+                <a href="?period={{ .PeriodType }}&date={{ .PrevDate }}&token={{ .Token }}" class="nav-btn">
+                    ‹ 上一{{ if eq .PeriodType "weekly" }}周{{ else if eq .PeriodType "monthly" }}月{{ else if eq .PeriodType "quarterly" }}季{{ else }}年{{ end }}
+                </a>
+
+                <!-- 📅 中间日期：点击即唤起手机系统级日历弹窗 -->
+                <label class="date-picker-trigger" title="点击选择任意日期">
+                    <span class="date-display-text">{{ .DateRange }} <span style="font-size: 10px; color: var(--text-muted);">▼</span></span>
+                    <input type="date"
+                           class="hidden-date-input"
+                           value="{{ .TargetDate }}"
+                           onchange="handleDateSelect(this.value)">
+                </label>
+
+                <!-- 下一期 › -->
+                {{ if .HasNext }}
+                <a href="?period={{ .PeriodType }}&date={{ .NextDate }}&token={{ .Token }}" class="nav-btn">
+                    下一{{ if eq .PeriodType "weekly" }}周{{ else if eq .PeriodType "monthly" }}月{{ else if eq .PeriodType "quarterly" }}季{{ else }}年{{ end }} ›
+                </a>
+                {{ else }}
+                <span class="nav-btn disabled">当前</span>
+                {{ end }}
             </div>
         </div>
 
@@ -142,21 +223,25 @@
             </div>
 
             <!-- 列表: Top 5 大额开销 -->
+            {{ if .TopExpenses }}
             <div class="section-card">
                 <div class="card-title">🔥 本期大额开销 Top 5</div>
-                {{ range $i, $tx := .TopExpenses }}
-                <div class="top-row">
-                    <div style="display: flex; align-items: center;">
-                        <span class="rank-num">{{ add $i 1 }}</span>
-                        <div>
-                            <div style="font-weight: 600; color: var(--text-main);">{{ $tx.DisplayName }}</div>
-                            <div style="font-size: 11px; color: var(--text-muted);">{{ $tx.Date }} · {{ $tx.Category }}</div>
+                <div class="top-list-container">
+                    {{ range .TopExpenses }}
+                    <div class="top-row">
+                        <div style="display: flex; align-items: center;">
+                            <span class="rank-num"></span>
+                            <div>
+                                <div style="font-weight: 600; color: var(--text-main);">{{ .DisplayName }}</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">{{ .Date }} · {{ .Category }}</div>
+                            </div>
                         </div>
+                        <div style="font-weight: 700; color: var(--red);">￥{{ printf "%.2f" .Amount }}</div>
                     </div>
-                    <div style="font-weight: 700; color: var(--red);">￥{{ printf "%.2f" $tx.Amount }}</div>
+                    {{ end }}
                 </div>
-                {{ end }}
             </div>
+            {{ end }}
         </div>
 
         <div class="report-actions">
@@ -170,7 +255,7 @@
         </div>
     </div>
 
-    <!-- ⭐️ 核心解法：将数据包裹在独立 JSON 节点中，隔离模板语法与 JS 语法 -->
+    <!-- 数据隔离层 -->
     <script id="report-data" type="application/json">
     {
         "categories": [
@@ -191,8 +276,16 @@
     }
     </script>
 
-    <!-- ⭐️ 下方为 100% 纯净原生 JavaScript，0 模板语法，0 VS Code 红线报错！ -->
+    <!-- 原生 JavaScript 交互逻辑 -->
     <script>
+        // ⭐️ 用户在日历选择器选好日期后，自动无感重定向
+        function handleDateSelect(selectedDate) {
+            if (!selectedDate) return;
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('date', selectedDate);
+            window.location.search = urlParams.toString();
+        }
+
         const rawData = JSON.parse(document.getElementById('report-data').textContent);
 
         // 1. 分类环形图

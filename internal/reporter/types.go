@@ -58,11 +58,18 @@ type TrendItem struct {
 
 // PeriodicReportData 全周期统计通用模型 (周/月/季/年 100% 共用)
 type PeriodicReportData struct {
-	PeriodType        string         `json:"period_type"`         // "weekly" | "monthly" | "quarterly" | "yearly"
-	Title             string         `json:"title"`               // 报表标题
-	StartDate         string         `json:"start_date"`          // 起始日期 "2026-08-01"
-	EndDate           string         `json:"end_date"`            // 结束日期 "2026-08-31"
-	DateRange         string         `json:"date_range"`          // 页面展示区间 "08.01 ~ 08.31"
+	PeriodType string `json:"period_type"` // "weekly" | "monthly" | "quarterly" | "yearly"
+	Title      string `json:"title"`       // 报表标题
+	StartDate  string `json:"start_date"`  // 起始日期 "2026-08-01"
+	EndDate    string `json:"end_date"`    // 结束日期 "2026-08-31"
+	DateRange  string `json:"date_range"`  // 页面展示区间 "08.01 ~ 08.31"
+
+	// 时间导航锚点
+	TargetDate string `json:"target_date"` // 当前基准日期 "2026-08-26"
+	PrevDate   string `json:"prev_date"`   // 上一周期基准日期 "2026-08-19"
+	NextDate   string `json:"next_date"`   // 下一周期基准日期 "2026-09-02"
+	HasNext    bool   `json:"has_next"`    // 是否存在下一周期 (未来则为 false)
+
 	TotalExpense      float64        `json:"total_expense"`       // 本期总支出
 	TotalIncome       float64        `json:"total_income"`        // 本期总收入
 	NetSavings        float64        `json:"net_savings"`         // 本期净结余 (收入 - 支出)
