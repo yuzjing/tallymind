@@ -15,6 +15,11 @@
             --tag-text: #1d4ed8;
             --badge-tag-bg: #f3e8ff;
             --badge-tag-text: #7e22ce;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --secondary-bg: #f8fafc;
+            --secondary-border: #cbd5e1;
+            --secondary-text: #334155;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -65,6 +70,17 @@
             color: #15803d;
             font-size: 11px;
             font-weight: 500;
+        }
+        /* 多笔合计看板横幅 */
+        .total-banner {
+            margin-top: 14px;
+            padding: 10px 14px;
+            background: #fff7ed;
+            border: 1px solid #ffedd5;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
         }
         /* 明细列表 */
         .receipt-body {
@@ -152,31 +168,51 @@
             border: 1px solid var(--border-color);
             display: block;
         }
-        /* Fava 直达主操作按钮 */
+        /* 底部操作区 (双按钮组) */
         .receipt-actions {
             padding: 14px 16px;
             background: #ffffff;
             border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
-        .btn-fava {
+        .btn-primary {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 6px;
             width: 100%;
             padding: 11px 0;
-            background: #2563eb;
+            background: var(--primary);
             color: #ffffff;
             text-decoration: none;
             border-radius: 10px;
             font-size: 14px;
             font-weight: 600;
             box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
-            transition: background-color 0.15s ease;
+            transition: background 0.15s ease;
         }
-        .btn-fava:active {
-            background: #1d4ed8;
+        .btn-primary:active { background: var(--primary-hover); }
+        
+        .btn-secondary {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+            padding: 10px 0;
+            background: var(--secondary-bg);
+            color: var(--secondary-text);
+            text-decoration: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid var(--secondary-border);
+            transition: background 0.15s ease;
         }
+        .btn-secondary:active { background: #e2e8f0; }
+
         /* 底部信息 */
         .receipt-footer {
             background: #f9fafb;
@@ -196,17 +232,9 @@
             <div class="receipt-time">生成时间: {{ .NowTime }}</div>
             <div class="badge-signed">✓ 签名核验通过 · 2小时内有效</div>
 
+            <!-- 多笔时展示显眼的合计金额横幅 -->
             {{ if gt .Receipt.Count 1 }}
-            <div style="
-                margin-top: 14px;
-                padding: 10px 16px;
-                background: #fff7ed;
-                border: 1px solid #ffedd5;
-                border-radius: 10px;
-                display: flex;
-                justify-content: space-between;
-                align-items: baseline;
-            ">
+            <div class="total-banner">
                 <span style="font-size: 13px; color: #9a3412; font-weight: 500;">
                     📊 本次共计入 {{ .Receipt.Count }} 笔
                 </span>
@@ -266,7 +294,7 @@
                 </div>
                 {{ end }}
 
-                <!-- 备注 -->
+                <!-- 备注说明 -->
                 {{ if .Narration }}
                 <div class="tx-desc">
                     <strong>备注:</strong> {{ .Narration }}
@@ -276,7 +304,7 @@
             {{ end }}
         </div>
 
-        <!-- 3. 原始票据快照 -->
+        <!-- 3. 原始票据快照 (如果有) -->
         {{ if .Receipt.ImageURL }}
         <div class="receipt-media">
             <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">📸 原始票据快照</div>
@@ -284,16 +312,24 @@
         </div>
         {{ end }}
 
-        <!-- 4. 大盘直达按钮 -->
-        {{ if .PanelPath }}
+        <!-- 4. 底部操作区 (双按钮联动) -->
         <div class="receipt-actions">
-            <a class="btn-fava" href="{{ .PanelPath }}" target="_blank">
-                <span>📊</span> 查看全账本与图表
+            <!-- 按钮 1：原生移动端 H5 周期财务分析大屏 -->
+            {{ if .ReportPath }}
+            <a class="btn-primary" href="{{ .ReportPath }}" target="_blank">
+                <span>📊</span> 查看周期财务分析报表 (周/月/年)
             </a>
-        </div>
-        {{ end }}
+            {{ end }}
 
-        <!-- 5. 页脚统计汇总 -->
+            <!-- 按钮 2：Fava 完整大盘 (仅当配置了 Panel 时展示) -->
+            {{ if .PanelPath }}
+            <a class="btn-secondary" href="{{ .PanelPath }}" target="_blank">
+                <span>📈</span> 打开 Beancount 桌面大盘
+            </a>
+            {{ end }}
+        </div>
+
+        <!-- 5. 页脚说明 -->
         <div class="receipt-footer">
             <span>Beancount 归档 · 共 {{ .Receipt.Count }} 笔 · 合计 ￥{{ printf "%.2f" .Receipt.TotalAmount }}</span>
         </div>

@@ -62,6 +62,16 @@ func (h *ReceiptHandler) RenderReceipt(c *gin.Context) {
 		slog.Debug("🧾 [Receipt] 动态渲染小票大盘直达链接", "panel_path", panelPath)
 	}
 
+	// 生成 H5 周期报表安全链接
+	reportToken := crypto.GenerateSignedToken(
+		h.cfg.App.ReceiptSignSecret,
+		"report_view",
+		2*time.Hour,
+		crypto.DefaultTokenSignLen,
+	)
+	reportPath := fmt.Sprintf("/report?period=weekly&token=%s", reportToken)
+	slog.Debug("🧾 [Receipt] 动态渲染小票报表安全链接", "report_path", reportPath)
+
 	// 2. 动态拼接模板路径
 	tmplPath := filepath.Join(h.cfg.App.TemplateDir, h.cfg.App.ReceiptTemplate)
 	tmpl, err := template.ParseFiles(tmplPath)
@@ -73,9 +83,10 @@ func (h *ReceiptHandler) RenderReceipt(c *gin.Context) {
 	// 3. 输出 HTML 响应
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	_ = tmpl.Execute(c.Writer, ReceiptPageData{
-		Receipt:   data,
-		NowTime:   time.Now().Format("2006-01-02 15:04:05"),
-		PanelPath: panelPath,
+		Receipt:    data,
+		NowTime:    time.Now().Format("2006-01-02 15:04:05"),
+		PanelPath:  panelPath,
+		ReportPath: reportPath,
 	})
 
 }
