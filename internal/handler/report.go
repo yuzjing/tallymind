@@ -39,6 +39,9 @@ func (h *ReportHandler) RenderReport(c *gin.Context) {
 	period := c.DefaultQuery("period", "weekly")
 	dateStr := c.Query("date")
 
+	startDate := c.Query("start")
+	endDate := c.Query("end")
+
 	// 解析基准时间，未传则默认取当前时间
 	targetTime := time.Now()
 	if dateStr != "" {
@@ -82,7 +85,7 @@ func (h *ReportHandler) RenderReport(c *gin.Context) {
 	}
 
 	//  实时按需调用计算引擎
-	reportData, err := h.accountService.GetPeriodicReport(c.Request.Context(), period, targetTime)
+	reportData, err := h.accountService.GetPeriodicReport(c.Request.Context(), period, targetTime, startDate, endDate)
 	if err != nil {
 		slog.ErrorContext(c.Request.Context(), "计算报表失败", "err", err)
 		c.String(http.StatusInternalServerError, "实时计算报表失败: %v", err)

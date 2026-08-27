@@ -82,7 +82,7 @@ func (s *Scheduler) Trigger(ctx context.Context, period string) {
 
 	slog.Info("📊 开始生成并分发主动推送报表...", "period", period, "handlers_count", len(handlers))
 
-	reportData, err := s.accountingService.GetPeriodicReport(ctx, period, time.Now())
+	reportData, err := s.accountingService.GetPeriodicReport(ctx, period, time.Now(), "", "")
 	if err != nil {
 		slog.ErrorContext(ctx, "生成推送报表失败", "period", period, "err", err)
 		return
