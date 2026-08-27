@@ -146,6 +146,9 @@ func main() {
 			callbackHandler.RegisterRoutes(r)
 			slog.Info("已加载企业微信 HTTP 回调插件")
 
+			reportHandler := handler.NewReportHandler(cfg, accountingService)
+			reportHandler.RegisterRoutes(r)
+
 			wecomHandler.RegisterCron(scheduler)
 		}
 
