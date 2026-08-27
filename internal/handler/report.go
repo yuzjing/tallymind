@@ -9,9 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"log/slog"
 	"tallymind/internal/config"
 	"tallymind/internal/crypto"
-	"tallymind/internal/reporter"
 	"tallymind/internal/service"
 )
 
@@ -84,9 +84,12 @@ func (h *ReportHandler) RenderReport(c *gin.Context) {
 	//  实时按需调用计算引擎
 	reportData, err := h.accountService.GetPeriodicReport(c.Request.Context(), period, targetTime)
 	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "计算报表失败", "err", err)
 		c.String(http.StatusInternalServerError, "实时计算报表失败: %v", err)
 		return
 	}
+
+	reportData.Token = token
 
 	// 即时渲染 templates/web/periodic_report.html
 	tmplPath := filepath.Join(h.cfg.App.TemplateDir, h.cfg.App.ReportTemplate)
@@ -100,16 +103,13 @@ func (h *ReportHandler) RenderReport(c *gin.Context) {
 		},
 	}).ParseFiles(tmplPath)
 	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "加载报表模板失败", "path", tmplPath, "err", err)
 		c.String(http.StatusInternalServerError, "模板解析失败: %v", err)
 		return
 	}
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	_ = tmpl.Execute(c.Writer, struct {
-		*reporter.PeriodicReportData
-		token string
-	}{
-		PeriodicReportData: reportData,
-		token:              token,
-	})
+	if err := tmpl.Execute(c.Writer, reportData); err != nil {
+		slog.ErrorContext(c.Request.Context(), "执行模板渲染失败", "err", err)
+	}
 }

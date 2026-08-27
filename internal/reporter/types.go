@@ -69,6 +69,7 @@ type PeriodicReportData struct {
 	PrevDate   string `json:"prev_date"`   // 上一周期基准日期 "2026-08-19"
 	NextDate   string `json:"next_date"`   // 下一周期基准日期 "2026-09-02"
 	HasNext    bool   `json:"has_next"`    // 是否存在下一周期 (未来则为 false)
+	Token      string `json:"token"`
 
 	TotalExpense      float64        `json:"total_expense"`       // 本期总支出
 	TotalIncome       float64        `json:"total_income"`        // 本期总收入
