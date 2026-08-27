@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"tallymind/internal/cron"
+	"tallymind/internal/reporter"
 	"tallymind/internal/service"
 
 	"tallymind/internal/template"
@@ -19,16 +21,18 @@ type WeComHandler struct {
 	publicURL       string
 	successTemplate string
 	failureTemplate string
+	reportTemplate  string
 }
 
 func NewWeComHandler(
-	accountService *service.AccountingService, client *Client, templateDir, successTemplate, failureTemplate string) *WeComHandler {
+	accountService *service.AccountingService, client *Client, templateDir, successTemplate, failureTemplate, reportTemplate string) *WeComHandler {
 	return &WeComHandler{
 		accountService:  accountService,
 		client:          client,
 		templateDir:     templateDir,
 		successTemplate: successTemplate,
 		failureTemplate: failureTemplate,
+		reportTemplate:  reportTemplate,
 	}
 }
 
@@ -139,4 +143,25 @@ func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMs
 	}
 
 	return userText, attachments, nil
+}
+
+// RegisterCron 将企业微信的周报与月报分发器挂载到调度引擎中
+func (h *WeComHandler) RegisterCron(scheduler *cron.Scheduler) {
+	// 1. 注册周报推送卡片
+	scheduler.OnReport("weekly", func(ctx context.Context, data *reporter.PeriodicReportData) error {
+		cardMsg, err := template.Render[MessageRequest](h.templateDir, "wecom/weekly_report.yaml", data)
+		if err != nil {
+			return err
+		}
+		return h.client.SendMessage(ctx, cardMsg)
+	})
+
+	// 2. 注册月报推送卡片 (复用或使用独立模板)
+	scheduler.OnReport("monthly", func(ctx context.Context, data *reporter.PeriodicReportData) error {
+		cardMsg, err := template.Render[MessageRequest](h.templateDir, h.reportTemplate, data)
+		if err != nil {
+			return err
+		}
+		return h.client.SendMessage(ctx, cardMsg)
+	})
 }

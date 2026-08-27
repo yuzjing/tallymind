@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>📊 {{ .Title }} - TallyMind</title>
+    <!-- 轻量 ECharts CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --primary: #2563eb;
+            --green: #10b981;
+            --red: #ea580c;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            padding: 16px 12px;
+            min-height: 100vh;
+        }
+        .report-container {
+            width: 100%;
+            max-width: 480px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .report-header {
+            padding: 22px 20px 16px;
+            text-align: center;
+            border-bottom: 2px dashed var(--border-color);
+        }
+        .report-title { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+        .report-time { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+        
+        .tabs-container { padding: 14px 16px 4px; }
+        .tabs { display: flex; background: #f1f5f9; padding: 3px; border-radius: 10px; border: 1px solid var(--border-color); }
+        .tab-item { flex: 1; text-align: center; padding: 8px 0; font-size: 13px; font-weight: 600; color: var(--text-muted); text-decoration: none; border-radius: 8px; }
+        .tab-item.active { background: #ffffff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+        .report-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+        .section-card { background: #ffffff; border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; }
+        
+        .kpi-main { text-align: center; padding: 4px 0 12px; }
+        .kpi-label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+        .kpi-val { font-size: 28px; font-weight: 800; color: var(--red); margin: 4px 0; }
+        .kpi-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: var(--text-muted); }
+        .kpi-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding-top: 12px; border-top: 1px dashed var(--border-color); text-align: center; }
+        .kpi-sub-title { font-size: 11px; color: var(--text-muted); }
+        .kpi-sub-val { font-size: 14px; font-weight: 700; margin-top: 3px; }
+
+        .card-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        .chart-box { width: 100%; }
+        .top-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #f8fafc; font-size: 13px; }
+        .top-row:last-child { border-bottom: none; }
+        .rank-num { width: 20px; height: 20px; background: #f1f5f9; color: #475569; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; margin-right: 8px; }
+
+        .report-actions { padding: 14px 16px; border-top: 1px solid var(--border-color); }
+        .btn-panel { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 11px 0; background: var(--primary); color: #ffffff; text-decoration: none; border-radius: 10px; font-size: 14px; font-weight: 600; }
+        .report-footer { background: #f9fafb; padding: 12px 16px; text-align: center; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border-color); }
+    </style>
+</head>
+<body>
+    <div class="report-container">
+        <!-- 1. 报表头部 -->
+        <div class="report-header">
+            <div class="report-title">📊 TallyMind 财务分析报表</div>
+            <div class="report-time">{{ .Title }} · {{ .DateRange }}</div>
+        </div>
+
+        <!-- 2. 周期切换 Tab -->
+        <div class="tabs-container">
+            <div class="tabs">
+                <a href="?period=weekly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "weekly" }}active{{ end }}">周报</a>
+                <a href="?period=monthly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "monthly" }}active{{ end }}">月报</a>
+                <a href="?period=quarterly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "quarterly" }}active{{ end }}">季报</a>
+                <a href="?period=yearly&token={{ .Token }}" class="tab-item {{ if eq .PeriodType "yearly" }}active{{ end }}">年报</a>
+            </div>
+        </div>
+
+        <div class="report-body">
+            <!-- 核心 KPI 看板 -->
+            <div class="section-card">
+                <div class="kpi-main">
+                    <div class="kpi-label">本期总支出</div>
+                    <div class="kpi-val">￥{{ printf "%.2f" .TotalExpense }}</div>
+                    {{ if ne .PrevExpense 0.0 }}
+                        <div class="kpi-badge">
+                            环比上期: {{ if gt .ExpenseChangeRate 0.0 }}<span style="color: #ef4444;">+{{ printf "%.1f" .ExpenseChangeRate }}% 📈</span>{{ else }}<span style="color: #10b981;">{{ printf "%.1f" .ExpenseChangeRate }}% 📉</span>{{ end }}
+                        </div>
+                    {{ else }}
+                        <div class="kpi-badge">共计入 {{ .TransactionCount }} 笔流水</div>
+                    {{ end }}
+                </div>
+
+                <div class="kpi-grid">
+                    <div>
+                        <div class="kpi-sub-title">💵 总收入</div>
+                        <div class="kpi-sub-val" style="color: var(--green);">￥{{ printf "%.0f" .TotalIncome }}</div>
+                    </div>
+                    <div>
+                        <div class="kpi-sub-title">🏦 净结余</div>
+                        <div class="kpi-sub-val" style="color: var(--primary);">￥{{ printf "%.0f" .NetSavings }}</div>
+                    </div>
+                    <div>
+                        <div class="kpi-sub-title">📈 储蓄率</div>
+                        <div class="kpi-sub-val">{{ printf "%.1f" .SavingsRate }}%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 图表 1: 分类支出占比 -->
+            <div class="section-card">
+                <div class="card-title">🏷️ 分类支出分布</div>
+                <div id="catChart" class="chart-box" style="height: 230px;"></div>
+            </div>
+
+            <!-- 图表 2: 成员开销分布 -->
+            {{ if .MemberBreakdown }}
+            <div class="section-card">
+                <div class="card-title">👥 成员开销占比</div>
+                <div id="memChart" class="chart-box" style="height: 180px;"></div>
+            </div>
+            {{ end }}
+
+            <!-- 图表 3: 走势折线图 -->
+            <div class="section-card">
+                <div class="card-title">📈 支出趋势分析</div>
+                <div id="trendChart" class="chart-box" style="height: 190px;"></div>
+            </div>
+
+            <!-- 列表: Top 5 大额开销 -->
+            <div class="section-card">
+                <div class="card-title">🔥 本期大额开销 Top 5</div>
+                {{ range $i, $tx := .TopExpenses }}
+                <div class="top-row">
+                    <div style="display: flex; align-items: center;">
+                        <span class="rank-num">{{ add $i 1 }}</span>
+                        <div>
+                            <div style="font-weight: 600; color: var(--text-main);">{{ $tx.DisplayName }}</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">{{ $tx.Date }} · {{ $tx.Category }}</div>
+                        </div>
+                    </div>
+                    <div style="font-weight: 700; color: var(--red);">￥{{ printf "%.2f" $tx.Amount }}</div>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+
+        <div class="report-actions">
+            <a class="btn-panel" href="/tallyview/" target="_blank">
+                <span>📊</span> 查看完整 Beancount 账本与大盘
+            </a>
+        </div>
+
+        <div class="report-footer">
+            <span>TallyMind 自动化复式记账分析系统</span>
+        </div>
+    </div>
+
+    <!-- ⭐️ 核心解法：将数据包裹在独立 JSON 节点中，隔离模板语法与 JS 语法 -->
+    <script id="report-data" type="application/json">
+    {
+        "categories": [
+            {{ range $i, $c := .CategoryBreakdown }}
+            {{ if $i }},{{ end }}{"name": "{{ $c.ShortCategory }}", "value": {{ $c.Amount }}}
+            {{ end }}
+        ],
+        "members": [
+            {{ range $i, $m := .MemberBreakdown }}
+            {{ if $i }},{{ end }}{"name": "{{ $m.ShortCategory }}", "value": {{ $m.Amount }}}
+            {{ end }}
+        ],
+        "trends": [
+            {{ range $i, $t := .Trends }}
+            {{ if $i }},{{ end }}{"date": "{{ $t.Date }}", "value": {{ $t.Amount }}}
+            {{ end }}
+        ]
+    }
+    </script>
+
+    <!-- ⭐️ 下方为 100% 纯净原生 JavaScript，0 模板语法，0 VS Code 红线报错！ -->
+    <script>
+        const rawData = JSON.parse(document.getElementById('report-data').textContent);
+
+        // 1. 分类环形图
+        const catChart = echarts.init(document.getElementById('catChart'));
+        catChart.setOption({
+            tooltip: { trigger: 'item', formatter: '{b}: ￥{c} ({d}%)' },
+            series: [{
+                type: 'pie',
+                radius: ['42%', '68%'],
+                itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+                label: { show: true, formatter: '{b}\n{d}%', fontSize: 11 },
+                data: rawData.categories
+            }]
+        });
+
+        // 2. 成员柱状图
+        const memElem = document.getElementById('memChart');
+        let memChart = null;
+        if (memElem && rawData.members.length > 0) {
+            memChart = echarts.init(memElem);
+            memChart.setOption({
+                tooltip: { trigger: 'axis', formatter: '{b}: ￥{c}' },
+                grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+                xAxis: { type: 'category', data: rawData.members.map(m => m.name) },
+                yAxis: { type: 'value' },
+                series: [{ type: 'bar', data: rawData.members.map(m => m.value), itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] } }]
+            });
+        }
+
+        // 3. 走势折线图
+        const trendChart = echarts.init(document.getElementById('trendChart'));
+        trendChart.setOption({
+            tooltip: { trigger: 'axis', formatter: '{b}<br/>支出: ￥{c}' },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+            xAxis: { type: 'category', data: rawData.trends.map(t => t.date) },
+            yAxis: { type: 'value' },
+            series: [{
+                type: 'line',
+                smooth: true,
+                data: rawData.trends.map(t => t.value),
+                lineStyle: { color: '#ea580c', width: 3 },
+                areaStyle: { color: 'rgba(234, 88, 12, 0.08)' }
+            }]
+        });
+
+        window.addEventListener('resize', () => {
+            catChart.resize();
+            if (memChart) memChart.resize();
+            trendChart.resize();
+        });
+    </script>
+</body>
+</html>

@@ -42,7 +42,7 @@ func (h *ReceiptHandler) RenderReceipt(c *gin.Context) {
 	// 1. 直接向 service 查询小票数据 (内部已自动完成安全验签与 2 小时时效判定)
 	data, ok := h.accountService.GetReceipt(id, token)
 	if !ok {
-		c.String(http.StatusForbidden, "403 Forbidden: 小票访问签名无效、已过期 (有效期 2 小时) 或小票不存在")
+		c.String(http.StatusForbidden, "403 Forbidden: 签名无效")
 		return
 	}
 

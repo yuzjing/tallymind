@@ -1,0 +1,25 @@
+# templates/wecom/weekly_report.yaml
+msgtype: "text"
+text:
+  content: >
+    {{- if .TopExpenses -}}
+    {{ printf "📊 %s (%s)\n──────────────\n支出：￥%.2f | 收入：￥%.2f\n共计 %d 笔消费，最大开销：%s (￥%.2f)\n──────────────\n🔗 <a href=\"%s\">查看详细数据 ›</a>"
+      .Title
+      .DateRange
+      .TotalExpense
+      .TotalIncome
+      .TransactionCount
+      (index .TopExpenses 0).DisplayName
+      (index .TopExpenses 0).Amount
+      .JumpURL
+    | quote }}
+    {{- else -}}
+    {{ printf "📊 %s (%s)\n──────────────\n支出：￥%.2f | 收入：￥%.2f\n共计 %d 笔消费\n──────────────\n🔗 <a href=\"%s\">查看详细数据 ›</a>"
+      .Title
+      .DateRange
+      .TotalExpense
+      .TotalIncome
+      .TransactionCount
+      .JumpURL
+    | quote }}
+    {{- end }}

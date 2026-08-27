@@ -21,6 +21,7 @@ type AppConfig struct {
 	ReceiptSignSecret string `yaml:"receipt_sign_secret"` // 小票签名密钥
 	TemplateDir       string `yaml:"template_dir"`        // 模板目录路径
 	ReceiptTemplate   string `yaml:"receipt_template"`    // 小票模板路径
+	ReportTemplate    string `yaml:"report_template"`     // 报告模板路径
 	PublicURL         string `yaml:"public_url"`          // 应用外部公网主域名
 	PanelURL          string `yaml:"panel_url"`           // 看板后端容器地址
 	PanelPath         string `yaml:"panel_path"`          // 看板后端容器地址路径
@@ -47,6 +48,7 @@ type WeComConfig struct {
 	EncodingAESKey  string `yaml:"encoding_aes_key"`
 	SuccessTemplate string `yaml:"success_template"`
 	FailureTemplate string `yaml:"failure_template"`
+	ReportTemplate  string `yaml:"report_template"`
 	BotID           string `yaml:"bot_id"`
 	BotSecret       string `yaml:"bot_secret"`
 }
@@ -131,6 +133,7 @@ func setDefaults(cfg *Config) {
 
 	cfg.App.ReceiptTemplate = cmp.Or(cfg.App.ReceiptTemplate, "web/receipt.html")
 	cfg.App.ReceiptSignSecret = cmp.Or(cfg.App.ReceiptSignSecret, "tallymind_default_secret_key")
+	cfg.App.ReportTemplate = cmp.Or(cfg.App.ReportTemplate, "web/periodic_report.html")
 
 	cfg.App.PanelURL = cmp.Or(cfg.App.PanelURL, "")
 	cfg.App.PanelPath = cmp.Or(cfg.App.PanelPath, "")
@@ -144,6 +147,7 @@ func setDefaults(cfg *Config) {
 
 	cfg.WeCom.SuccessTemplate = cmp.Or(cfg.WeCom.SuccessTemplate, "wecom/expense_success.yaml")
 	cfg.WeCom.FailureTemplate = cmp.Or(cfg.WeCom.FailureTemplate, "wecom/expense_fail.yaml")
+	cfg.WeCom.ReportTemplate = cmp.Or(cfg.WeCom.ReportTemplate, "wecom/report.yaml")
 
 	if cfg.LLM.MaxTokens == 0 {
 		cfg.LLM.MaxTokens = 4096

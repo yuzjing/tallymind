@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"tallymind/internal/config"
+	"tallymind/internal/cron"
 	"tallymind/internal/handler"
 	"tallymind/internal/llm"
 	"tallymind/internal/notifier"
@@ -96,6 +97,7 @@ func main() {
 
 	// 全局单例：最先初始化核心记账业务服务
 	accountingService := service.NewAccountingService(cfg, llmClient)
+	scheduler := cron.NewScheduler(cfg, accountingService)
 
 	if cfg.App.EnableHTTPAPI {
 		if cfg.App.Env == "production" {
@@ -137,11 +139,20 @@ func main() {
 				cfg.App.TemplateDir,
 				cfg.WeCom.SuccessTemplate,
 				cfg.WeCom.FailureTemplate,
+				cfg.WeCom.ReportTemplate,
 			)
 
 			callbackHandler := wecom.NewCallbackHandler(&cfg.WeCom, wecomHandler)
 			callbackHandler.RegisterRoutes(r)
 			slog.Info("已加载企业微信 HTTP 回调插件")
+
+			wecomHandler.RegisterCron(scheduler)
+		}
+
+		// 4. 启动后台定时任务
+		if cfg.App.EnableReporter {
+			slog.Info("⏰ 定时报表调度器已就绪")
+			go scheduler.Start(ctx)
 		}
 
 		// 注册通用统计大盘反向代理

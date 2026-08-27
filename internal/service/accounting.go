@@ -258,3 +258,21 @@ func resolveActor(rawInput string, members map[string][]string, fallback string)
 	// 2. 如果字典里没有 (如 AI 自由推断的 "parents", "friends", "colleague")，原样保留
 	return target
 }
+
+// GetPeriodicReport 业务用例：获取指定周期的财务分析报表
+func (s *AccountingService) GetPeriodicReport(ctx context.Context, periodType string, refTime time.Time) (*reporter.PeriodicReportData, error) {
+	jumpURL := s.BuildReportURL(periodType)
+	return reporter.GeneratePeriodicReport(s.ledgerConfig.FilePath, periodType, refTime, jumpURL)
+}
+
+// BuildReportURL 生成带 2 小时时效签名的周期报表安全链接
+func (s *AccountingService) BuildReportURL(periodType string) string {
+	token := crypto.GenerateSignedToken(
+		s.cfg.App.ReceiptSignSecret,
+		"report_view",
+		2*time.Hour,
+		crypto.DefaultTokenSignLen,
+	)
+	baseURL := strings.TrimRight(s.cfg.App.PublicURL, "/")
+	return fmt.Sprintf("%s/report?period=%s&token=%s", baseURL, periodType, token)
+}

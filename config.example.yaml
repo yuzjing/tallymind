@@ -10,6 +10,7 @@ app:
   template_dir: "templates"        # 模板根目录
   receipt_template: ""
   receipt_sign_secret: ""          # 小票 2 小时验签私钥 
+  report_template: ""
   panel_url: "http://panel:5000"  # 看板后端容器地址 (留空自动关闭反代)
   panel_path: "/panel"                # 动态挂载前缀 (如 /panel 或 /view)
 
@@ -62,6 +63,7 @@ wecom:
   encoding_aes_key: "your_43_chars_encoding_aes_key"
   success_template: "wecom/expense_success.yaml"
   failure_template: "wecom/expense_fail.yaml"
+  report_template: "wecom/report.yaml"
 
   # WSS 机器人 (可选)
   bot_id: ""
