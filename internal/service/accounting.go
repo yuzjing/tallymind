@@ -83,25 +83,23 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 	if err != nil {
 		return reporter.ReplyData{}, fmt.Errorf("AI 解析账单失败: %w", err)
 	}
-	if batch == nil || len(batch.Transactions) == 0 {
-		return reporter.ReplyData{}, fmt.Errorf("未识别出有效记账明细")
+
+	// ⭐️ 核心修复：放行纯资产对账请求 (只要有交易流水或有资产断言，均视为有效)
+	if batch == nil || (len(batch.Transactions) == 0 && len(batch.BalanceAssertions) == 0) {
+		return reporter.ReplyData{}, fmt.Errorf("未识别出有效记账或对账指令")
 	}
 
-	// ⭐️ 3.5 智能实体反查与双重保底 (彻底消除 husband、member_a 或空值漏洞)
+	// ⭐️ 3.5 交易流水智能反查与双重保底
 	for i := range batch.Transactions {
 		tx := &batch.Transactions[i]
-
-		// 记账人 (reporter) 强制由通信协议层判定
 		tx.Meta.Reporter = currentActor
 
-		// 出资人 (owner)：空值保底为发信人；有值则反查字典 (表外自由推断如 parents 原样保留)
 		if strings.TrimSpace(tx.Meta.Owner) == "" {
 			tx.Meta.Owner = currentActor
 		} else {
 			tx.Meta.Owner = resolveActor(tx.Meta.Owner, s.ledgerConfig.Members, currentActor)
 		}
 
-		// 受益人 (beneficiary)：空值保底为发信人；有值则反查字典
 		if strings.TrimSpace(tx.Meta.Beneficiary) == "" {
 			tx.Meta.Beneficiary = currentActor
 		} else {
@@ -109,7 +107,17 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 		}
 	}
 
-	// 4. 组装审计上下文并持久化写入底层账本
+	// ⭐️ 3.6 资产断言智能反查与发信人保底
+	for i := range batch.BalanceAssertions {
+		b := &batch.BalanceAssertions[i]
+		if strings.TrimSpace(b.Owner) == "" {
+			b.Owner = currentActor
+		} else {
+			b.Owner = resolveActor(b.Owner, s.ledgerConfig.Members, currentActor)
+		}
+	}
+
+	// 4. 组装审计上下文并持久化写入底层账本 (同时写入流水与断言)
 	reqCtx := ledger.RequestContext{
 		UserID:        currentActor,
 		SourceChannel: cmp.Or(in.SourceChannel, "api"),
@@ -121,9 +129,9 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 		return reporter.ReplyData{}, fmt.Errorf("账本存盘失败: %w", err)
 	}
 
-	// 5. 若具备唯一消息 ID，生成带时效签名的 H5 电子小票并放入缓存
+	// 5. 若具备唯一消息 ID 且包含常规交易，生成带时效签名的 H5 电子小票并放入缓存
 	var jumpURL string
-	if in.MessageID != "" {
+	if in.MessageID != "" && len(batch.Transactions) > 0 {
 		jumpURL = s.BuildReceiptURL(in.MessageID)
 		previewImage := extractFirstImageURL(in.Attachments)
 		replyData := reporter.BuildReplyData(batch, jumpURL, previewImage)
@@ -131,17 +139,17 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 		return replyData, nil
 	}
 
-	// 免小票追踪场景直接返回基础展示数据
+	// 纯对账或免小票场景直接返回基础展示数据
 	return reporter.BuildReplyData(batch, "", ""), nil
 }
 
 // RecordDirect 直接结构化记账用例 (供标准 REST API 等免 AI 场景直接持久化)
 func (s *AccountingService) RecordDirect(ctx context.Context, userID, sourceChannel string, req *BatchTransactions) (reporter.ReplyData, error) {
-	if req == nil || len(req.Transactions) == 0 {
+	if req == nil || (len(req.Transactions) == 0 && len(req.BalanceAssertions) == 0) {
 		return reporter.ReplyData{}, fmt.Errorf("交易批次为空，无需存盘")
 	}
 
-	currentActor := normalizeActor(userID, s.ledgerConfig.Members, s.ledgerConfig.DefaultReporter)
+	currentActor := resolveActor(userID, s.ledgerConfig.Members, s.ledgerConfig.DefaultReporter)
 	reqCtx := ledger.RequestContext{
 		UserID:        currentActor,
 		SourceChannel: cmp.Or(sourceChannel, "rest_api"),
@@ -193,24 +201,6 @@ func (s *AccountingService) GetReceipt(id, token string) (reporter.ReplyData, bo
 	return data, ok
 }
 
-// normalizeActor 实体身份归一化：根据配置别名表将原始 UserID 映射为标准实体 Key
-func normalizeActor(rawID string, members map[string][]string, fallback string) string {
-	if rawID == "" {
-		return cmp.Or(fallback, "unknown")
-	}
-	for standardKey, aliases := range members {
-		if strings.EqualFold(rawID, standardKey) {
-			return standardKey
-		}
-		for _, alias := range aliases {
-			if strings.EqualFold(rawID, alias) {
-				return standardKey
-			}
-		}
-	}
-	return rawID
-}
-
 // formatContextHints 构造注入给大模型的通用业务上下文与实体对照提示词
 func formatContextHints(currentActor string, members map[string][]string) string {
 	var sb strings.Builder
@@ -236,7 +226,7 @@ func extractFirstImageURL(atts []Attachment) string {
 	return ""
 }
 
-// resolveActor 根据 members 字典反查标准 Key
+// resolveActor 核心统一反查函数：根据 members 字典全量反查标准 Key (消除重复定义)
 func resolveActor(rawInput string, members map[string][]string, fallback string) string {
 	target := strings.TrimSpace(rawInput)
 	if target == "" {

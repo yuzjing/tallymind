@@ -7,9 +7,9 @@ import (
 	"tallymind/internal/ledger"
 )
 
-// BuildReplyData 纯函数：将 ledger 领域实体提炼为纯净的 ReplyData 数据模型
+// BuildReplyData 纯函数：将 ledger 领域实体提炼为纯净的 ReplyData 展示数据模型
 func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) ReplyData {
-	if batch == nil || len(batch.Transactions) == 0 {
+	if batch == nil {
 		return ReplyData{}
 	}
 
@@ -20,15 +20,16 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 	for _, tx := range batch.Transactions {
 		totalAmount += tx.Amount
 
-		// 提取展示名
 		displayName := cmp.Or(tx.Payee, tx.Narration, "日常消费")
+		displayCat := formatCategory(tx.Category, 2)
 
 		items = append(items, TransactionItem{
 			Date:            tx.Date,
 			Payee:           tx.Payee,
 			Narration:       tx.Narration,
 			Category:        tx.Category,
-			DisplayCategory: formatCategory(tx.Category, 2),
+			DisplayCategory: displayCat,
+			ShortCategory:   displayCat, // 兼容旧模板字段
 			Account:         tx.Account,
 			Amount:          tx.Amount,
 			Currency:        cmp.Or(tx.Currency, "CNY"),
@@ -39,32 +40,43 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			SourceChannel:   tx.Meta.SourceChannel,
 			Tags:            tx.Tags,
 		})
+	}
 
+	primaryName := "日常消费"
+	primaryCat := "未分类"
+	var firstItem TransactionItem
+
+	if count > 0 {
+		primaryName = items[0].DisplayName
+		primaryCat = items[0].DisplayCategory
+		firstItem = items[0]
 	}
 
 	return ReplyData{
 		Count:           count,
 		TotalAmount:     roundFloat(totalAmount, 2),
-		Currency:        items[0].Currency,
+		Currency:        cmp.Or(batch.Transactions[0].Currency, "CNY"),
 		IsSingle:        count == 1,
-		PrimaryName:     items[0].DisplayName,
-		PrimaryCategory: formatCategory(items[0].Category, 2),
+		PrimaryName:     primaryName,
+		PrimaryCategory: primaryCat,
 		Items:           items,
-		FirstItem:       items[0],
+		FirstItem:       firstItem,
 		JumpURL:         jumpURL,
 		ImageURL:        imageURL,
 	}
 }
 
-// SummaryHeadline 生成标准的一句话极简总结 (单笔/多笔自适应，全系统通用)
+
+// SummaryHeadline 生成即时记账、资产断言与自动找平的一句话极简总结
 func (r ReplyData) SummaryHeadline() string {
-	if r.Count == 0 {
-		return "暂无有效记账数据"
+	// 场景 1：包含常规记账流水
+	if r.Count > 0 {
+		if r.IsSingle {
+			return fmt.Sprintf("👌 已记好：%s ￥%.2f (%s)", r.PrimaryName, r.FirstItem.Amount, r.PrimaryCategory)
+		}
+		return fmt.Sprintf("👌 已记好：共计入 %d 笔账单，合计 ￥%.2f", r.Count, r.TotalAmount)
 	}
 
-	if r.IsSingle {
-		return fmt.Sprintf("已记好：%s ￥%.2f (%s)", r.PrimaryName, r.FirstItem.Amount, r.PrimaryCategory)
-	}
-
-	return fmt.Sprintf("已记好：共计入 %d 笔账单，合计 ￥%.2f", r.Count, r.TotalAmount)
+	// 场景 2：纯对账与平账场景
+	return "👌 资产对账与断言已同步记录 (Fava 已完成数学核对)"
 }

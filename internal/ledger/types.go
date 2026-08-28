@@ -89,3 +89,15 @@ type BatchSummary struct {
 	Items       []TransactionView `json:"items"`
 	FirstItem   TransactionView   `json:"first_item"`
 }
+
+
+// BalanceAssertion 资产断言与自动平账实体
+type BalanceAssertion struct {
+	Date        string  `json:"date"`                   // 对账日期 (YYYY-MM-DD)
+	Account     string  `json:"account"`                // 目标资产/负债账户 (如 Assets:WeChat:Wallet)
+	Amount      float64 `json:"amount"`                 // 真实余额 (当前水位的确切金额)
+	Currency    string  `json:"currency"`               // 货币
+	Owner       string  `json:"owner,omitempty"`        // 账户所有人 (如 zhaozhao, jingjing)
+	AutoPad     bool    `json:"auto_pad,omitempty"`     // 是否开启自动平账 (若为 true 则先写入 pad 找平)
+	PadAccount  string  `json:"pad_account,omitempty"`  // 自动平账差额归集科目 (默认为 Expenses:Other:Uncategorized)
+}

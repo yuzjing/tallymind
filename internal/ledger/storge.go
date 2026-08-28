@@ -12,31 +12,41 @@ import (
 
 // AppendBatchTransactions 自动按年份拆分文件并追加写入
 func AppendBatchTransactions(basePath string, req *BatchTransactions, cfg Config, ctx RequestContext) error {
-	// 按年份分组存储 Beancount 文本: map[年份文件路径]文本内容
 	yearlyTextMap := make(map[string]*strings.Builder)
 
 	req.EnsureDefaults(cfg, ctx)
 
+	// 1. 遍历写入常规交易行
 	for _, tx := range req.Transactions {
-		// 1. 校验与补全默认值
 		if err := tx.Validate(); err != nil {
 			return err
 		}
 
-		// 2. 根据交易日期推导目标年份文件路径 (如: transactions/2026.bean)
 		targetPath := GetYearlyFilePath(basePath, tx.Date)
-
-		// 3. 按年份文件归类文本
 		if _, exists := yearlyTextMap[targetPath]; !exists {
 			yearlyTextMap[targetPath] = &strings.Builder{}
 		}
 		yearlyTextMap[targetPath].WriteString(tx.ToBeancountFormat())
 	}
 
-	// 4. 遍历年份 map，分别追加写入对应的 .bean 文件
-	for targetPath, builder := range yearlyTextMap {
+	// 2. 遍历写入资产断言与自动找平指令 (balance / pad)
+	for _, b := range req.BalanceAssertions {
+		if b.Account == "" {
+			continue
+		}
+		if b.Date == "" {
+			b.Date = ctx.MessageTime.Format("2006-01-02")
+		}
 
-		// ⭐️ 自动创建父级文件夹 (例如 transactions/ 目录不存在时自动建好)
+		targetPath := GetYearlyFilePath(basePath, b.Date)
+		if _, exists := yearlyTextMap[targetPath]; !exists {
+			yearlyTextMap[targetPath] = &strings.Builder{}
+		}
+		yearlyTextMap[targetPath].WriteString(b.ToBeancountFormat(cfg))
+	}
+
+	// 3. 遍历年份 map，分别追加写入对应的 .bean 文件
+	for targetPath, builder := range yearlyTextMap {
 		dir := filepath.Dir(targetPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("创建账本目录失败 [%s]: %w", dir, err)
@@ -48,11 +58,11 @@ func AppendBatchTransactions(basePath string, req *BatchTransactions, cfg Config
 		}
 
 		_, err = file.WriteString(builder.String())
-		file.Close() // 及时关闭文件
+		_ = file.Close()
 		if err != nil {
 			return fmt.Errorf("写入账单文件失败 [%s]: %w", targetPath, err)
 		}
-		slog.Info("成功追加账单到文件", "path", targetPath)
+		slog.Info("成功追加账单/断言到文件", "path", targetPath)
 	}
 
 	return nil
