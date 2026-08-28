@@ -87,17 +87,25 @@ func GeneratePeriodicReport(basePath string, periodType string, targetTime time.
 
 	if periodType != "custom" {
 		if prevData, err := scanAndAggregatePeriod(basePath, prevStartDate, prevEndDate, isYearly); err == nil {
-			// 支出环比
-			if prevData.TotalExpense > 0 {
-				data.PrevExpense = prevData.TotalExpense
-				data.ExpenseChangeRate = roundFloat(((data.TotalExpense-prevData.TotalExpense)/prevData.TotalExpense)*100, 1)
-			}
-			// 收入与结余环比数据记录
+			data.HasPrevData = true
+			data.PrevExpense = prevData.TotalExpense
 			data.PrevIncome = prevData.TotalIncome
 			data.PrevSavings = prevData.NetSavings
-			if prevData.TotalIncome > 0 {
-				data.IncomeChangeRate = roundFloat(((data.TotalIncome-prevData.TotalIncome)/prevData.TotalIncome)*100, 1)
+
+			// 1. 支出对比 (彻底解决 0 到有的边界情况)
+			data.ExpenseChangeDiff = roundFloat(data.TotalExpense-prevData.TotalExpense, 2)
+			if prevData.TotalExpense > 0 {
+				data.ExpenseChangeRate = roundFloat((data.ExpenseChangeDiff/prevData.TotalExpense)*100, 1)
+			} else if data.TotalExpense > 0 {
+				// 上期为 0，本期有支出：标记为 100% (新增)
+				data.ExpenseChangeRate = 100.0
 			}
+
+			// 2. 收入增减差额
+			data.IncomeChangeDiff = roundFloat(data.TotalIncome-prevData.TotalIncome, 2)
+
+			// 3. 净结余改善/恶化差额 (结余比上期多了还是少了)
+			data.SavingsChangeDiff = roundFloat(data.NetSavings-prevData.NetSavings, 2)
 		}
 	}
 

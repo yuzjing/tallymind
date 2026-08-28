@@ -104,6 +104,9 @@ func (h *ReportHandler) RenderReport(c *gin.Context) {
 			}
 			return b
 		},
+		"neg": func(val float64) float64 {
+			return -val
+		},
 	}).ParseFiles(tmplPath)
 	if err != nil {
 		slog.ErrorContext(c.Request.Context(), "加载报表模板失败", "path", tmplPath, "err", err)

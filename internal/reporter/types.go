@@ -56,34 +56,39 @@ type TrendItem struct {
 	Amount float64 `json:"amount"` // 支出金额
 }
 
-// PeriodicReportData 全周期统计通用模型 (周/月/季/年 100% 共用)
 type PeriodicReportData struct {
-	PeriodType string `json:"period_type"` // "weekly" | "monthly" | "quarterly" | "yearly"
-	Title      string `json:"title"`       // 报表标题
-	StartDate  string `json:"start_date"`  // 起始日期 "2026-08-01"
-	EndDate    string `json:"end_date"`    // 结束日期 "2026-08-31"
-	DateRange  string `json:"date_range"`  // 页面展示区间 "08.01 ~ 08.31"
-
-	// 时间导航锚点
-	TargetDate string `json:"target_date"` // 当前基准日期 "2026-08-26"
-	PrevDate   string `json:"prev_date"`   // 上一周期基准日期 "2026-08-19"
-	NextDate   string `json:"next_date"`   // 下一周期基准日期 "2026-09-02"
-	HasNext    bool   `json:"has_next"`    // 是否存在下一周期 (未来则为 false)
+	PeriodType string `json:"period_type"`
+	Title      string `json:"title"`
+	StartDate  string `json:"start_date"`
+	EndDate    string `json:"end_date"`
+	DateRange  string `json:"date_range"`
+	TargetDate string `json:"target_date"`
+	PrevDate   string `json:"prev_date"`
+	NextDate   string `json:"next_date"`
+	HasNext    bool   `json:"has_next"`
 	Token      string `json:"token"`
 
-	TotalExpense      float64        `json:"total_expense"`       // 本期总支出
-	TotalIncome       float64        `json:"total_income"`        // 本期总收入
-	NetSavings        float64        `json:"net_savings"`         // 本期净结余 (收入 - 支出)
-	SavingsRate       float64        `json:"savings_rate"`        // 储蓄率百分比 (0~100)
-	PrevExpense       float64        `json:"prev_expense"`        // 上期总支出 (用于环比)
-	ExpenseChangeRate float64        `json:"expense_change_rate"` // 支出环比增减率 (负数代表节省)
-	PrevIncome        float64        `json:"prev_income"`         // 👈 上期收入
-	IncomeChangeRate  float64        `json:"income_change_rate"`  // 👈 收入环比 %
-	PrevSavings       float64        `json:"prev_savings"`        // 👈 上期净结余
-	TransactionCount  int            `json:"transaction_count"`   // 总交易笔数
-	CategoryBreakdown []CategoryStat `json:"category_breakdown"`  // 支出分类排行榜
-	MemberBreakdown   []CategoryStat `json:"member_breakdown"`    // 成员开销排行榜
-	Trends            []TrendItem    `json:"trends"`              // 统一使用 Trends []TrendItem
-	TopExpenses       []ExpenseItem  `json:"top_expenses"`        // 最大几笔大额开销
-	JumpURL           string         `json:"jump_url,omitempty"`  // H5 详情跳转链接
+	TotalExpense float64 `json:"total_expense"`
+	TotalIncome  float64 `json:"total_income"`
+	NetSavings   float64 `json:"net_savings"`
+	SavingsRate  float64 `json:"savings_rate"`
+
+	// ⭐️ 核心新增：全维度对比与差额指标
+	HasPrevData       bool    `json:"has_prev_data"`       // 是否存在上期数据
+	PrevExpense       float64 `json:"prev_expense"`        // 上期支出
+	ExpenseChangeRate float64 `json:"expense_change_rate"` // 支出环比 %
+	ExpenseChangeDiff float64 `json:"expense_change_diff"` // 支出增减差额 (本期 - 上期)
+
+	PrevIncome       float64 `json:"prev_income"`        // 上期收入
+	IncomeChangeDiff float64 `json:"income_change_diff"` // 收入增减差额
+
+	PrevSavings       float64 `json:"prev_savings"`        // 上期结余
+	SavingsChangeDiff float64 `json:"savings_change_diff"` // 结余改善/恶化差额
+
+	TransactionCount  int            `json:"transaction_count"`
+	CategoryBreakdown []CategoryStat `json:"category_breakdown"`
+	MemberBreakdown   []CategoryStat `json:"member_breakdown"`
+	Trends            []TrendItem    `json:"trends"`
+	TopExpenses       []ExpenseItem  `json:"top_expenses"`
+	JumpURL           string         `json:"jump_url,omitempty"`
 }
