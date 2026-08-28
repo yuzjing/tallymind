@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"tallymind/internal/ledger"
+	"text/template"
 	"time"
 
 	"strings"
@@ -97,58 +98,35 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 // buildSystemPrompt 动态生成 Prompt，传入当前日期供 AI 参考
 func (c *Client) buildSystemPrompt(contextHints string) string {
 	today := time.Now().Format("2006-01-02")
-	year := today[:4]
 
 	var extraHints string
 	if strings.TrimSpace(contextHints) != "" {
 		extraHints = "\n" + strings.TrimSpace(contextHints) + "\n"
 	}
 
-	return fmt.Sprintf(`你是一个专业的全模态财务记账助手。将用户发送的文本、语音、账单小票/发票截图提取为标准 Beancount JSON 数据。今日基准日期：%[1]s。%[2]s
+	// ⭐️ 动态从配置路径读取 Markdown 提示词文件 (0 硬编码，0 秒热更新)
+	if c.cfg.PromptTemplate != "" {
+		content, err := os.ReadFile(c.cfg.PromptTemplate)
+		if err == nil {
+			tmpl, err := template.New("system_prompt").Parse(string(content))
+			if err == nil {
+				var buf bytes.Buffer
+				if err := tmpl.Execute(&buf, struct {
+					Today        string
+					ContextHints string
+				}{
+					Today:        today,
+					ContextHints: extraHints,
+				}); err == nil {
+					return buf.String()
+				}
+			}
+		} else {
+			slog.Warn("读取外挂提示词模板失败，使用内置保底提示词", "path", c.cfg.PromptTemplate, "err", err)
+		}
+	}
 
-【核心提取原则】：
-1. amount: 实付金额绝对值（必须 > 0，退款/收入亦为正数，无有效交易返回 {"transactions": []}）；currency: 默认 "CNY"，见外币符号精准提取(如 USD, JPY)。
-2. date: YYYY-MM-DD，结合今日(%[1]s)推算相对日期，未提及设为 ""。
-3. payee: 店铺/商户/机构名称；narration: 商品明细或备注说明；type: "expense"(支出), "income"(收入), "refund"(退款)。
-4. category: Beancount 科目，日常以 Expenses: 或 Income: 开头（如 Expenses:Food:Drinks）；期初建账/初始资金注入使用 Equity:Opening-Balances。
-5. account: 结算账户(如 Assets:Bank:CMB, Liabilities:CreditCard:ICBC, Assets:WeChat:Wallet, Liabilities:Alipay:Huabei)。【必须见图文明确凭据才提取，严禁根据聊天渠道臆测，无凭据必须为 ""】。
-6. tags: 字符串数组。提取特征标签（如周期扣费 "#recurring"、待报销 "#reimbursement"、特定场景如 "#medical"、"#renovation" 等），无特征设为 []。
-7. metadata  (无依据一律设为 ""):
-   - owner: 出资人/付款人。若提及他人出资优先归一化为【实体映射表】标准Key；不能推断付款人设为 ""。
-   - beneficiary: 实际受益人。若有明确受益对象，优先归一化为【实体映射表】标准Key；表外对象自由推断英文/拼音 (如 "parents", "colleague", "friends", "pet")；不能推断设为 ""。
-   - invoice_status: 电子发票填 "done"，需开票/待报销填 "pending"，无发票设为 ""。
-   - original_amount / discount_amount: 原价与优惠减免金额 (无则设为 "")。
-   - time / location / link: 小票具体时间(HH:MM:SS)、分店地点、订单流水号 (无则设为 "")。
-
-
-【输出 JSON 示例】：
-{
-  "transactions": [
-    {
-      "amount": 4.00,
-      "currency": "CNY",
-      "date": "%[1]s",
-      "payee": "蜜雪冰城(中关村店)",
-      "narration": "冰鲜柠檬水",
-      "category": "Expenses:Food:Drinks",
-      "account": "",
-      "type": "expense",
-      "tags": [],
-      "metadata": {
-        "owner": "",
-        "beneficiary": "",
-        "invoice_status": "",
-        "original_amount": "6.00",
-        "discount_amount": "2.00",
-        "time": "14:20:00",
-        "location": "中关村店",
-        "link": "20260824001"
-      }
-    }
-  ]
-}
-
-【要求】：只输出合法 JSON 对象，不含任何 Markdown 标记或多余废话。`, today, year, extraHints)
+	return c.defaultFallbackPrompt(today, extraHints)
 }
 
 func NewClient(cfg Config) (*Client, error) {
@@ -236,11 +214,11 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 				{Role: "system", Content: c.buildSystemPrompt(contextHints)},
 				{Role: "user", Content: parts},
 			},
-			Temperature:      c.cfg.Temperature,
-			TopP:             c.cfg.TopP,
-			FrequencyPenalty: c.cfg.FrequencyPenalty,
-			PresencePenalty:  c.cfg.PresencePenalty,
-			MaxTokens:        c.cfg.MaxTokens,
+			Temperature:      provider.Temperature,      // 读取当前模型的独立温度
+			TopP:             provider.TopP,             // 读取当前模型的独立 TopP
+			FrequencyPenalty: provider.FrequencyPenalty, // 读取当前模型的惩罚系数
+			PresencePenalty:  provider.PresencePenalty,
+			MaxTokens:        provider.MaxTokens, // 读取当前模型独立的最大 Token
 			ResponseFormat:   &ResponseFormat{Type: "json_object"},
 		}
 
@@ -253,6 +231,13 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 		baseURL := strings.TrimRight(provider.BaseURL, "/")
 		apiURL := fmt.Sprintf("%s/chat/completions", baseURL)
 
+		reqCtx := ctx
+		if provider.Timeout > 0 {
+			var cancel context.CancelFunc
+			reqCtx, cancel = context.WithTimeout(reqCtx, provider.Timeout)
+			defer cancel()
+		}
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(reqBytes))
 		if err != nil {
 			return nil, fmt.Errorf("创建 HTTP 请求失败: %w", err)
@@ -260,6 +245,10 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
+
+		for k, v := range provider.ExtraHeaders {
+			req.Header.Set(k, v)
+		}
 
 		// 执行请求
 		resp, err := c.httpClient.Do(req)
@@ -350,4 +339,14 @@ func cleanMarkdownJSON(raw string) string {
 	}
 
 	return strings.TrimSpace(raw)
+}
+
+func (c *Client) defaultFallbackPrompt(today, extraHints string) string {
+	return fmt.Sprintf(`你是一个专业的全模态财务记账助手。将用户发送的文本、语音、账单小票/发票截图提取为标准 Beancount JSON 数据。今日基准日期：%[1]s。%[2]s
+【核心原则】：
+1. amount: 实付金额绝对值(>0)，currency: 默认 "CNY"。
+2. category: 提取为标准二级Beancount支出科目 (如 Expenses:Food:Breakfast)。
+3. account: 结算账户(必须见明确凭证提取，严禁臆测，无凭据设为 "")。
+4. metadata: owner(出资人), beneficiary(受益人)优先归一化为映射表Key，日常自用设为 ""。
+【要求】：只输出合法 JSON 对象 {"transactions": [...]}，不含多余废话。`, today, extraHints)
 }

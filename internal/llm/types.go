@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 type Config struct {
-	Providers        []Provider
-	MaxTokens        int64
-	Temperature      float64
-	TopP             float64
-	FrequencyPenalty float64
-	PresencePenalty  float64
+	Providers      []Provider
+	PromptTemplate string
 }
 
 // Attachment 通用媒体附件载体 (支持图片、文档、音频等)
@@ -81,9 +78,16 @@ type ChatCompletionResponse struct {
 
 // Provider 单个提供商实体 (支持同平台多Key，也支持跨平台)
 type Provider struct {
-	APIKey  string `json:"api_key"`
-	BaseURL string `json:"base_url"`
-	Model   string `json:"model"`
+	APIKey           string            `json:"api_key"`
+	BaseURL          string            `json:"base_url"`
+	Model            string            `json:"model"`
+	MaxTokens        int64             `json:"max_tokens,omitempty"`  // 模型独立最大 Token
+	Temperature      float64           `json:"temperature,omitempty"` // 模型独立采样温度
+	TopP             float64           `json:"top_p,omitempty"`       // 模型独立 TopP
+	FrequencyPenalty float64           `json:"frequency_penalty,omitempty"`
+	PresencePenalty  float64           `json:"presence_penalty,omitempty"`
+	Timeout          time.Duration     `json:"timeout,omitempty"`       // 请求超时时间 (毫秒)
+	ExtraHeaders     map[string]string `json:"extra_headers,omitempty"` // 请求头扩展
 }
 
 // ProviderPool 并发安全的多提供商轮询池

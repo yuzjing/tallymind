@@ -4,7 +4,6 @@ package reporter
 import (
 	"cmp"
 	"fmt"
-	"strings"
 	"tallymind/internal/ledger"
 )
 
@@ -58,24 +57,6 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		JumpURL:         jumpURL,
 		ImageURL:        imageURL,
 	}
-}
-
-func getShortCategory(fullCategory string) string {
-	if fullCategory == "" {
-		return "未分类"
-	}
-
-	// 1. 剥离顶层的 Expenses: 或 Income:
-	trimmed := fullCategory
-	for _, prefix := range []string{"Expenses:", "Income:", "Liabilities:", "Assets:"} {
-		if after, ok := strings.CutPrefix(trimmed, prefix); ok {
-			trimmed = after
-			break
-		}
-	}
-
-	// 2. 转换冒号为更直观的箭头层级: 如 "Auto:Maintenance" -> "Auto > Maintenance"
-	return strings.ReplaceAll(trimmed, ":", " > ")
 }
 
 // SummaryHeadline 生成标准的一句话极简总结 (单笔/多笔自适应，全系统通用)

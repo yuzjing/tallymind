@@ -31,26 +31,44 @@ app:
 # 2. 多服务商大模型配置 (支持跨平台故障转移与多 Key 轮询)
 # ==========================================
 llm:
-  max_tokens: 4096
-  temperature: 0.2
-  top_p: 0.0
-  frequency_penalty: 0.0
-  presence_penalty: 0.0
+  prompt_template: "prompt/system_prompt.md"
   providers:
-    # 🌟 主力：Google Gemini 2.5 Flash
+    # 主力：Google Gemini 2.5 Flash
     - base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
       model: "gemini-2.5-flash"
       api_key: "AQ.GeminiKey1_Account1..."
-
-    # 🌟 备用：第二个 Gemini 账号 Key (用于并发限流容灾)
+      max_tokens: 4096
+      temperature: 0.2
+      top_p: 0.0
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+      timeout: "30s"
+   
+    #  备用：第二个账号 Key (用于并发限流容灾)
     - base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
       model: "gemini-2.5-flash"
       api_key: "AQ.GeminiKey2_Account2..."
+      max_tokens: 4096
+      temperature: 0.2
+      top_p: 0.0
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+      timeout: "30s"
+     
 
-    # 🌟 备用：DeepSeek 官方 API (可选)
-    # - base_url: "https://api.deepseek.com"
-    #   model: "deepseek-chat"
-    #   api_key: "sk-DeepSeekKey..."
+    # 场景 3：全参数深度定制模型 (如 DeepSeek-R1 推理模型或私有网关，支持毫秒级超时与自定义Header)
+    # - base_url: "https://api.deepseek.com/v1"
+    #   model: "deepseek-reasoner"
+    #   api_key: "sk-..."
+    #   temperature: 0.6                 # 采样温度 (0.0 ~ 2.0，推理模型推荐 0.6)
+    #   max_tokens: 8192                 # 最大输出 Token (思考链模型建议扩大至 8192)
+    #   top_p: 0.95                      # 核采样率 (0.0 ~ 1.0)
+    #   frequency_penalty: 0.0           # 频率惩罚系数 (-2.0 ~ 2.0)
+    #   presence_penalty: 0.0            # 存在惩罚系数 (-2.0 ~ 2.0)
+    #   timeout: "90s"                   # 👈 支持精细超时: "500ms", "1500ms", "30s", "90s"
+    #   extra_headers:                   # 👈 自定义 HTTP 请求头 (可选)
+    #     X-Custom-Auth: "custom-token"
+    #     X-Tenant-ID: "finance-dept"
 
 # ==========================================
 # 3. 企业微信自建应用配置

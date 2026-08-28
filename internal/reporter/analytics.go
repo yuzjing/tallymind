@@ -188,6 +188,29 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		CategoryBreakdown: categoryStats,
 		MemberBreakdown:   memberStats,
 		TopExpenses:       topExpenses,
-		Trends:            trends, // 👈 赋值给 Trends
+		Trends:            trends, // 赋值给 Trends
 	}, nil
+}
+
+func getShortCategory(fullCategory string) string {
+	if fullCategory == "" {
+		return "未分类"
+	}
+
+	// 1. 去除根前缀
+	trimmed := fullCategory
+	for _, prefix := range []string{"Expenses:", "Income:", "Liabilities:", "Assets:", "Equity:"} {
+		if strings.HasPrefix(trimmed, prefix) {
+			trimmed = strings.TrimPrefix(trimmed, prefix)
+			break
+		}
+	}
+
+	// 2. 截取最多两级
+	parts := strings.Split(trimmed, ":")
+	if len(parts) > 2 {
+		parts = parts[:2] // 强制截断为前两级
+	}
+
+	return strings.Join(parts, " > ")
 }

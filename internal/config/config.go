@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -55,39 +57,52 @@ type WeComConfig struct {
 
 // LLMProviderConfig 专门用于反序列化 YAML 的 Provider DTO
 type LLMProviderConfig struct {
-	APIKey  string `yaml:"api_key"`
-	BaseURL string `yaml:"base_url"`
-	Model   string `yaml:"model"`
+	APIKey           string            `yaml:"api_key"`
+	BaseURL          string            `yaml:"base_url"`
+	Model            string            `yaml:"model"`
+	MaxTokens        int64             `yaml:"max_tokens"`
+	Temperature      *float64          `yaml:"temperature"`
+	TopP             *float64          `yaml:"top_p"`
+	FrequencyPenalty *float64          `yaml:"frequency_penalty"`
+	PresencePenalty  *float64          `yaml:"presence_penalty"`
+	Timeout          string            `yaml:"timeout"`
+	ExtraHeaders     map[string]string `yaml:"extra_headers"`
 }
 
 // LLMConfig 专门用于反序列化 YAML 的 LLM DTO
 type LLMConfig struct {
-	MaxTokens        int64               `yaml:"max_tokens"`
-	Temperature      float64             `yaml:"temperature"`
-	TopP             float64             `yaml:"top_p"`
-	FrequencyPenalty float64             `yaml:"frequency_penalty"`
-	PresencePenalty  float64             `yaml:"presence_penalty"`
-	Providers        []LLMProviderConfig `yaml:"providers"`
+	Providers      []LLMProviderConfig `yaml:"providers"`
+	PromptTemplate string              `yaml:"prompt_template"`
 }
 
 // ToDomain 将 YAML 配置转换为纯净的 llm.Config 领域实体
-func (c *LLMConfig) ToDomain() llm.Config {
+func (c *LLMConfig) ToDomain(templateDir string) llm.Config {
+	fullPromptPath := filepath.Join(templateDir, c.PromptTemplate)
 	providers := make([]llm.Provider, len(c.Providers))
 	for i, p := range c.Providers {
+		// 解析超时时间 (默认 30 秒)
+		timeoutDur, err := time.ParseDuration(p.Timeout)
+		if err != nil || timeoutDur <= 0 {
+			timeoutDur = 30 * time.Second
+		}
+
 		providers[i] = llm.Provider{
-			APIKey:  p.APIKey,
-			BaseURL: p.BaseURL,
-			Model:   p.Model,
+			APIKey:           p.APIKey,
+			BaseURL:          p.BaseURL,
+			Model:            p.Model,
+			MaxTokens:        cmp.Or(p.MaxTokens, int64(4096)), // 默认 4096
+			Temperature:      derefOr(p.Temperature, 0.2),      // 默认 0.2
+			TopP:             derefOr(p.TopP, 0.0),
+			FrequencyPenalty: derefOr(p.FrequencyPenalty, 0.0),
+			PresencePenalty:  derefOr(p.PresencePenalty, 0.0),
+			Timeout:          timeoutDur,
+			ExtraHeaders:     p.ExtraHeaders,
 		}
 	}
 
 	return llm.Config{
-		Providers:        providers,
-		MaxTokens:        c.MaxTokens,
-		Temperature:      c.Temperature,
-		TopP:             c.TopP,
-		FrequencyPenalty: c.FrequencyPenalty,
-		PresencePenalty:  c.PresencePenalty,
+		Providers:      providers,
+		PromptTemplate: fullPromptPath,
 	}
 }
 
@@ -138,6 +153,8 @@ func setDefaults(cfg *Config) {
 	cfg.App.PanelURL = cmp.Or(cfg.App.PanelURL, "")
 	cfg.App.PanelPath = cmp.Or(cfg.App.PanelPath, "")
 
+	cfg.LLM.PromptTemplate = cmp.Or(cfg.LLM.PromptTemplate, "prompt/system_prompt.md")
+
 	cfg.Ledger.FilePath = cmp.Or(cfg.Ledger.FilePath, "data/2026.bean")
 	cfg.Ledger.DefaultCurrency = cmp.Or(cfg.Ledger.DefaultCurrency, "CNY")
 	cfg.Ledger.DefaultReporter = cmp.Or(cfg.Ledger.DefaultReporter, "User")
@@ -149,7 +166,12 @@ func setDefaults(cfg *Config) {
 	cfg.WeCom.FailureTemplate = cmp.Or(cfg.WeCom.FailureTemplate, "wecom/expense_fail.yaml")
 	cfg.WeCom.ReportTemplate = cmp.Or(cfg.WeCom.ReportTemplate, "wecom/report.yaml")
 
-	if cfg.LLM.MaxTokens == 0 {
-		cfg.LLM.MaxTokens = 4096
+}
+
+// derefOr 泛型安全解引用辅助函数：若指针存在则解引用，若为 nil 则返回 fallback 默认值
+func derefOr[T any](ptr *T, fallback T) T {
+	if ptr != nil {
+		return *ptr
 	}
+	return fallback
 }
