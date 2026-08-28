@@ -43,18 +43,27 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 
 	primaryName := "日常消费"
 	primaryCat := "未分类"
+	currency := "CNY"
 	var firstItem TransactionItem
 
 	if count > 0 {
 		primaryName = items[0].DisplayName
 		primaryCat = items[0].DisplayCategory
 		firstItem = items[0]
+		currency = cmp.Or(items[0].Currency, "CNY")
+	} else if len(batch.BalanceAssertions) > 0 {
+		// ⭐️ 核心防崩溃修复：处理纯对账/断言场景，避免访问空切片 Transactions[0]
+		firstAssertion := batch.BalanceAssertions[0]
+		primaryName = firstAssertion.Account
+		primaryCat = "资产对账"
+		totalAmount = firstAssertion.Amount
+		currency = cmp.Or(firstAssertion.Currency, "CNY")
 	}
 
 	return ReplyData{
 		Count:           count,
 		TotalAmount:     roundFloat(totalAmount, 2),
-		Currency:        cmp.Or(batch.Transactions[0].Currency, "CNY"),
+		Currency:        currency, // 👈 安全赋值，绝不越界
 		IsSingle:        count == 1,
 		PrimaryName:     primaryName,
 		PrimaryCategory: primaryCat,
