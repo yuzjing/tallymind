@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ .Title }} - TallyMind</title>
-    <!-- 轻量 ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         :root {
@@ -28,7 +27,6 @@
             padding: 16px 12px;
             min-height: 100vh;
         }
-        /* 响应式大盘容器：手机端 480px，PC 端自动扩展至 880px 双列现代大盘 */
         .report-container {
             width: 100%;
             max-width: 480px;
@@ -99,7 +97,6 @@
         .kpi-label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
         .kpi-val { font-size: 30px; font-weight: 800; color: var(--orange); margin: 4px 0; letter-spacing: -0.5px; }
         
-        /* ⭐️ 极简高级中性底胶囊 */
         .kpi-badge {
             display: inline-flex;
             align-items: center;
@@ -117,7 +114,6 @@
         .kpi-sub-title { font-size: 11px; color: var(--text-muted); }
         .kpi-sub-val { font-size: 15px; font-weight: 700; margin-top: 4px; }
         
-        /* ⭐️ 副指标微型指示器 (规整双层排版) */
         .kpi-sub-badge {
             margin-top: 3px;
             font-size: 10px;
@@ -210,7 +206,7 @@
                     <div class="kpi-label">本期总支出</div>
                     <div class="kpi-val">￥{{ printf "%.2f" .TotalExpense }}</div>
 
-                    <!-- ⭐️ 主支出对比胶囊 (涵盖 0 到有的优雅处理) -->
+                    <!-- 主支出环比胶囊 -->
                     <div class="kpi-badge-wrapper">
                         {{ if .HasPrevData }}
                             <div class="kpi-badge">
@@ -233,9 +229,27 @@
                     </div>
                 </div>
 
-                <!-- ⭐️ 下方三列副指标：干净无噪点的对比指示器 -->
+                <!-- ⭐️ 核心自适应：周报展示【入账/日均/笔均】，月/季/年报展示【收入/结余/储蓄率】 -->
                 <div class="kpi-grid">
-                    <!-- 1. 总收入 -->
+                    {{ if eq .PeriodType "weekly" }}
+                    <!-- 周报专属副指标 (现金流与消费节奏) -->
+                    <div>
+                        <div class="kpi-sub-title">💵 本周入账</div>
+                        <div class="kpi-sub-val text-green">￥{{ printf "%.0f" .TotalIncome }}</div>
+                        <div class="kpi-sub-badge"><span class="text-muted">流水记录</span></div>
+                    </div>
+                    <div>
+                        <div class="kpi-sub-title">📅 日均支出</div>
+                        <div class="kpi-sub-val" style="color: var(--primary);">￥{{ printf "%.1f" .DailyAverage }}</div>
+                        <div class="kpi-sub-badge"><span class="text-muted">/天</span></div>
+                    </div>
+                    <div>
+                        <div class="kpi-sub-title">💳 笔均消费</div>
+                        <div class="kpi-sub-val" style="color: var(--text-main);">￥{{ printf "%.1f" .AvgPerTransaction }}</div>
+                        <div class="kpi-sub-badge"><span class="text-muted">共 {{ .TransactionCount }} 笔</span></div>
+                    </div>
+                    {{ else }}
+                    <!-- 月/季/年报专属副指标 (资产损益与财富积累) -->
                     <div>
                         <div class="kpi-sub-title">💵 总收入</div>
                         <div class="kpi-sub-val text-green">￥{{ printf "%.0f" .TotalIncome }}</div>
@@ -251,8 +265,6 @@
                             {{ end }}
                         </div>
                     </div>
-
-                    <!-- 2. 净结余 (展示改善/恶化差额，彻底移除 ⚠️ 警告) -->
                     <div>
                         <div class="kpi-sub-title">🏦 净结余</div>
                         <div class="kpi-sub-val {{ if ge .NetSavings 0.0 }}positive{{ else }}negative{{ end }}">
@@ -270,23 +282,22 @@
                             {{ end }}
                         </div>
                     </div>
-
-                    <!-- 3. 储蓄率 -->
                     <div>
                         <div class="kpi-sub-title">🎯 储蓄率</div>
                         <div class="kpi-sub-val">{{ printf "%.1f" .SavingsRate }}%</div>
                         <div class="kpi-sub-badge">
                             {{ if gt .SavingsRate 0.0 }}
-                            <span class="text-primary">盈余结转</span>
+                            <span class="text-primary">盈余沉淀</span>
                             {{ else }}
                             <span class="text-muted">无净储蓄</span>
                             {{ end }}
                         </div>
                     </div>
+                    {{ end }}
                 </div>
             </div>
 
-            <!-- 响应式图表网格 (PC 自动双列) -->
+            <!-- 响应式图表网格 -->
             <div class="charts-grid">
                 <!-- 图表 1: 分类支出占比 -->
                 <div class="section-card">
@@ -384,7 +395,7 @@
                     return;
                 }
             } catch (e) {
-                // 降级兜底
+                // 降级兼容
             }
             input.type = 'date';
             input.click();

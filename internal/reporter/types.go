@@ -56,6 +56,7 @@ type TrendItem struct {
 	Amount float64 `json:"amount"` // 支出金额
 }
 
+// internal/reporter/types.go 片段补充
 type PeriodicReportData struct {
 	PeriodType string `json:"period_type"`
 	Title      string `json:"title"`
@@ -73,17 +74,20 @@ type PeriodicReportData struct {
 	NetSavings   float64 `json:"net_savings"`
 	SavingsRate  float64 `json:"savings_rate"`
 
-	// ⭐️ 核心新增：全维度对比与差额指标
-	HasPrevData       bool    `json:"has_prev_data"`       // 是否存在上期数据
-	PrevExpense       float64 `json:"prev_expense"`        // 上期支出
-	ExpenseChangeRate float64 `json:"expense_change_rate"` // 支出环比 %
-	ExpenseChangeDiff float64 `json:"expense_change_diff"` // 支出增减差额 (本期 - 上期)
+	// ⭐️ 核心新增：日均支出与笔均消费 (专供周报)
+	DailyAverage      float64 `json:"daily_average"`       // 日均支出 (如 ¥180.50/天)
+	AvgPerTransaction float64 `json:"avg_per_transaction"` // 笔均消费 (如 ¥45.20/笔)
 
-	PrevIncome       float64 `json:"prev_income"`        // 上期收入
-	IncomeChangeDiff float64 `json:"income_change_diff"` // 收入增减差额
+	HasPrevData       bool    `json:"has_prev_data"`
+	PrevExpense       float64 `json:"prev_expense"`
+	ExpenseChangeRate float64 `json:"expense_change_rate"`
+	ExpenseChangeDiff float64 `json:"expense_change_diff"`
 
-	PrevSavings       float64 `json:"prev_savings"`        // 上期结余
-	SavingsChangeDiff float64 `json:"savings_change_diff"` // 结余改善/恶化差额
+	PrevIncome       float64 `json:"prev_income"`
+	IncomeChangeDiff float64 `json:"income_change_diff"`
+
+	PrevSavings       float64 `json:"prev_savings"`
+	SavingsChangeDiff float64 `json:"savings_change_diff"` // 净结余改善/恶化绝对值
 
 	TransactionCount  int            `json:"transaction_count"`
 	CategoryBreakdown []CategoryStat `json:"category_breakdown"`

@@ -109,6 +109,17 @@ func GeneratePeriodicReport(basePath string, periodType string, targetTime time.
 		}
 	}
 
+	// 计算日均开销与笔均消费
+	days := int(endDate.Sub(startDate).Hours()/24) + 1
+	if days <= 0 {
+		days = 1
+	}
+	data.DailyAverage = roundFloat(data.TotalExpense/float64(days), 2)
+
+	if data.TransactionCount > 0 {
+		data.AvgPerTransaction = roundFloat(data.TotalExpense/float64(data.TransactionCount), 2)
+	}
+
 	data.PeriodType = periodType
 	data.Title = title
 	data.StartDate = startDate.Format("2006-01-02")
