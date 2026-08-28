@@ -29,9 +29,10 @@ func AppendBatchTransactions(basePath string, req *BatchTransactions, cfg Config
 		yearlyTextMap[targetPath].WriteString(tx.ToBeancountFormat())
 	}
 
-	// 2. 遍历写入资产断言与自动找平指令 (balance / pad)
-	for _, b := range req.BalanceAssertions {
-		if b.Account == "" {
+	for i := range req.BalanceAssertions {
+		b := &req.BalanceAssertions[i]
+		if err := b.Validate(); err != nil {
+			slog.Warn("跳过无效资产断言", "err", err)
 			continue
 		}
 		if b.Date == "" {

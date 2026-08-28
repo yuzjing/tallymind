@@ -19,11 +19,11 @@ func (t *Transaction) ToBeancountFormat() string {
 	for _, tag := range t.Tags {
 		cleanTag := strings.TrimSpace(tag)
 		if cleanTag != "" {
+			tagsBuilder.WriteByte(' ') // 写入空格
 			if !strings.HasPrefix(cleanTag, "#") {
-				tagsBuilder.WriteString(" #" + cleanTag)
-			} else {
-				tagsBuilder.WriteString(" " + cleanTag)
+				tagsBuilder.WriteByte('#') // 写入 # 前缀
 			}
+			tagsBuilder.WriteString(cleanTag) // 写入标签内容
 		}
 	}
 	tagString := tagsBuilder.String()

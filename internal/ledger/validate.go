@@ -2,13 +2,14 @@
 package ledger
 
 import (
+	"fmt"
+	"log/slog"
+	"strings"
+
 	"github.com/go-playground/locales/zh"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 	zh_translations "github.com/go-playground/validator/v10/translations/zh"
-
-	"fmt"
-	"log/slog"
 )
 
 var (
@@ -28,7 +29,7 @@ func init() {
 	}
 }
 
-// Validate 全字段硬性保底校验
+// Validate 全字段硬性保底校验 (Transaction 实体校验)
 func (t *Transaction) Validate() error {
 	err := validate.Struct(t)
 	if err != nil {
@@ -39,6 +40,17 @@ func (t *Transaction) Validate() error {
 			}
 		}
 		return fmt.Errorf("记账失败: %w", err)
+	}
+	return nil
+}
+
+// Validate 资产断言合法性校验 (⭐️ 新增 BalanceAssertion 校验)
+func (b *BalanceAssertion) Validate() error {
+	if strings.TrimSpace(b.Account) == "" {
+		return fmt.Errorf("资产对账账户不能为空")
+	}
+	if b.Amount < 0 {
+		return fmt.Errorf("资产断言金额不能为负数")
 	}
 	return nil
 }

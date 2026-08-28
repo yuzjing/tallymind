@@ -29,7 +29,6 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			Narration:       tx.Narration,
 			Category:        tx.Category,
 			DisplayCategory: displayCat,
-			ShortCategory:   displayCat, // 兼容旧模板字段
 			Account:         tx.Account,
 			Amount:          tx.Amount,
 			Currency:        cmp.Or(tx.Currency, "CNY"),
@@ -65,7 +64,6 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		ImageURL:        imageURL,
 	}
 }
-
 
 // SummaryHeadline 生成即时记账、资产断言与自动找平的一句话极简总结
 func (r ReplyData) SummaryHeadline() string {
