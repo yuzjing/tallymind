@@ -19,11 +19,11 @@ func (t *Transaction) ToBeancountFormat() string {
 	for _, tag := range t.Tags {
 		cleanTag := strings.TrimSpace(tag)
 		if cleanTag != "" {
-			tagsBuilder.WriteByte(' ') // 写入空格
+			tagsBuilder.WriteByte(' ')
 			if !strings.HasPrefix(cleanTag, "#") {
-				tagsBuilder.WriteByte('#') // 写入 # 前缀
+				tagsBuilder.WriteByte('#')
 			}
-			tagsBuilder.WriteString(cleanTag) // 写入标签内容
+			tagsBuilder.WriteString(cleanTag)
 		}
 	}
 	tagString := tagsBuilder.String()
@@ -48,7 +48,7 @@ func (t *Transaction) ToBeancountFormat() string {
 	// 首行：2026-08-06 * "商户" "备注" #标签 ^链接
 	fmt.Fprintf(&builder, "%s %s \"%s\"%s%s%s\n", t.Date, flag, t.Payee, narrationPart, tagString, linkString)
 
-	// 3. 反射：自动遍历 Metadata 中的所有预设结构体字段 (增加 nil 安全保护)
+	// 3. 反射：自动遍历 Metadata 中的所有预设结构体字段 (空指针安全保护)
 	if t.Meta != nil {
 		metaVal := reflect.ValueOf(*t.Meta)
 		metaType := reflect.TypeFor[Metadata]()
@@ -75,7 +75,7 @@ func (t *Transaction) ToBeancountFormat() string {
 			}
 		}
 
-		// 4. 遍历 Extra 动态扩展字典 (直接用 Fprintf 写入 builder)
+		// 4. 遍历 Extra 动态扩展字典
 		for k, v := range t.Meta.Extra {
 			if k != "" && v != "" {
 				fmt.Fprintf(&builder, "  %s: \"%s\"\n", k, v)
@@ -83,11 +83,11 @@ func (t *Transaction) ToBeancountFormat() string {
 		}
 	}
 
-	// 5. 正负号处理
+	// 5. 正负号处理 (收入、退款或期初权益注入时，资产账户为正，对冲科目为负)
 	absAmount := math.Abs(t.Amount)
 	categoryAmount := absAmount
 	accountAmount := -absAmount
-	if t.Type == "refund" || t.Type == "income" {
+	if t.Type == "refund" || t.Type == "income" || strings.HasPrefix(t.Category, "Equity:") {
 		categoryAmount = -absAmount
 		accountAmount = absAmount
 	}
@@ -115,6 +115,7 @@ func (b *BalanceAssertion) ToBeancountFormat(cfg Config) string {
 
 	// 1. 如果开启了自动平账 (auto_pad)，在断言前一天插入 pad 找平指令
 	if b.AutoPad {
+		// ⭐️ 优先使用 AI 根据语境智能判断的 pad_account，未指定时默认走未分类支出保底
 		padAcc := cmp.Or(b.PadAccount, cfg.FallbackCategory, "Expenses:Other:Uncategorized")
 
 		// pad 日期取断言日期的前一天
@@ -123,7 +124,7 @@ func (b *BalanceAssertion) ToBeancountFormat(cfg Config) string {
 			padDate = t.AddDate(0, 0, -1).Format("2006-01-02")
 		}
 
-		fmt.Fprintf(&builder, "; 🌟 自动找平差额至 %s\n", padAcc)
+		fmt.Fprintf(&builder, "; 🌟 智能自动平账：将差额平衡至 %s\n", padAcc)
 		fmt.Fprintf(&builder, "%s pad %-32s  %s\n", padDate, targetAccount, padAcc)
 	}
 

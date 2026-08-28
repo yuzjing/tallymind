@@ -14,7 +14,7 @@
    - Expenses:Finance (金融费用): ServiceFee(手续费/分期手续费), Interest(借款利息), Other(未分类)
 
 2. 收入 (Income):
-   - Income:Salary(工资), Income:Bonus(奖金/绩效), Income:Interest(利息/理财收益), Income:Refund(退款), Income:Gift(红包), Income:Other(杂项)
+   - Income:Salary(工资), Income:Bonus(奖金/绩效), Income:Interest(利息/理财收益/余额宝收益), Income:Refund(退款), Income:Gift(红包), Income:Other(杂项)
 
 3. 资产与负债 (仅见图文明确凭据时提取，严禁臆测):
    - Assets:Bank:<CODE> (储蓄卡, 如 Assets:Bank:CMB), Assets:WeChat:Wallet, Assets:Alipay:Wallet, Assets:Cash
@@ -24,28 +24,31 @@
 
 【核心提取原则（严格区分 3 种指令）】：
 
-一、 常规交易流水 (transactions 列表 - 发生消费、转账或收入时提取):
+一、 常规交易流水 (transactions 列表 - 发生日常消费、转账或收入时提取):
 1. amount: 实付金额绝对值（必须 > 0，退款/收入亦为正数）；currency: 默认 "CNY"，外币精准提取。
 2. date: YYYY-MM-DD，结合今日推算，未提及设为 ""。
 3. payee: 店铺/商户/机构/收款人名称；narration: 商品明细或备注说明；type: "expense"(支出), "income"(收入), "refund"(退款)。
 4. category: 必须严格在上述【标准科目白名单】中选择。
 5. account: 结算账户(无需拼接人员名字，只需输出标准渠道如 Assets:WeChat:Wallet、Assets:Bank:CMB，无凭据设为 "")。
 6. tags: 字符串数组。提取特征标签(如 "#recurring", "#reimbursement")，无特征设为 []。
-7. metadata:
-   - owner: 实际出资人 (优先归一化为映射表标准Key；表外推断自由发挥；日常个人自用消费或未说明出资人设为 "")。
-   - beneficiary: 实际受益人 (有明确受益对象优先归一化为映射表Key，表外推断自由发挥如 "parents", "friends", "colleague", "pet"；日常个人自用设为 "")。
+7. metadata (无依据一律设为 ""):
+   - owner: 实际出资人 (优先归一化为映射表标准Key；表外推断自由发挥；日常个人消费或未说明出资人设为 "")。
+   - beneficiary: 实际受益人 (有明确受益对象优先归一化为映射表Key，表外推断自由发挥如 "parents", "friends", "colleague", "pet"；日常自用设为 "")。
    - invoice_status: 电子发票填 "done"，需开票/待报销填 "pending"，无则设为 ""。
    - original_amount / discount_amount: 原价与优惠减免金额 (无则设为 "")。
    - time / location / link: 小票具体时间(HH:MM:SS)、分店地点、订单流水号 (无则设为 "")。
 
-二、 资产对账与自动平账断言 (balance_assertions 列表 - 仅在涉及账户余额状态时提取):
-1. 若用户意图为【资产对账 / 汇报当前余额】(如截图显示"当前钱包余额 540.20"、文字提及"招行卡余额还剩12500"、"微信零钱还剩 300")：
+二、 资产对账与自动平账断言 (balance_assertions 列表 - 凡提及当前余额或发送余额截图时提取):
+1. 若用户意图为【汇报当前余额 / 常规对账】(如"当前钱包还剩 540"、"招行卡余额 12500"、"微信零钱还剩 300")：
    - 提取断言: {"date": "{{ .Today }}", "account": "Assets:Bank:CMB", "amount": 12500.00, "currency": "CNY", "owner": "", "auto_pad": false}
    - 此时 transactions 列表必须设为 []。
-2. 若用户明确包含【平账 / 强制对齐 / 自动找平】指令 (如"微信钱包强制平账 500元"、"招行卡自动找平到 8000")：
-   - 将 auto_pad 设为 true: {"date": "{{ .Today }}", "account": "Assets:WeChat:Wallet", "amount": 500.00, "currency": "CNY", "owner": "", "auto_pad": true}
+2. 若用户意图为【平账 / 强制对齐 / 自动找平 / 期初资产注入】(如"微信零钱强制平账500"、"期初微信钱包有10000"、"少了几十块强制对齐"):
+   - 提取断言: {"date": "{{ .Today }}", "account": "Assets:WeChat:Wallet", "amount": 500.00, "currency": "CNY", "owner": "", "auto_pad": true, "pad_account": "..."}
+   - pad_account 智能判定规则:
+     • 涉及【期初建账 / 初始资金注入 / 首次开户】➔ 填 "Equity:Opening-Balances" (注入净资产，不计入日常消费)；
+     • 涉及【日常记账差额找平 / 漏记支出冲销】➔ 填 "Expenses:Other:Uncategorized" (计入当期损耗支出)。
    - 此时 transactions 列表必须设为 []。
-3. 若为普通日常消费，balance_assertions 必须输出为 []。
+3. 普通日常消费流水，balance_assertions 必须输出为 []。
 
 【输出 JSON 示例】：
 {
