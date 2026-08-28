@@ -3,21 +3,21 @@ package reporter
 
 // TransactionItem 单笔交易明细视图
 type TransactionItem struct {
-	Date          string   `json:"date"`
-	Payee         string   `json:"payee"`
-	Narration     string   `json:"narration"`
-	Category      string   `json:"category"`
-	ShortCategory string   `json:"short_category"` // 末级科目 (如 Food > Lunch)
-	Account       string   `json:"account"`
-	Amount        float64  `json:"amount"`
-	Currency      string   `json:"currency"`
-	DisplayName   string   `json:"display_name"`             // 商户优先，备注兜底
-	Reporter      string   `json:"reporter,omitempty"`       // 记账操作人
-	Owner         string   `json:"owner,omitempty"`          // 出资归属人
-	Beneficiary   string   `json:"beneficiary,omitempty"`    // 实际受益人
-	SourceChannel string   `json:"source_channel,omitempty"` // 渠道来源 (如 wecom_plugin)
-	Link          string   `json:"link,omitempty"`           // 消息溯源 (^msg-xxxx)
-	Tags          []string `json:"tags,omitempty"`           // 特征标签列表
+	Date            string   `json:"date"`
+	Payee           string   `json:"payee"`
+	Narration       string   `json:"narration"`
+	Category        string   `json:"category"`
+	DisplayCategory string   `json:"display_category"`
+	Account         string   `json:"account"`
+	Amount          float64  `json:"amount"`
+	Currency        string   `json:"currency"`
+	DisplayName     string   `json:"display_name"`             // 商户优先，备注兜底
+	Reporter        string   `json:"reporter,omitempty"`       // 记账操作人
+	Owner           string   `json:"owner,omitempty"`          // 出资归属人
+	Beneficiary     string   `json:"beneficiary,omitempty"`    // 实际受益人
+	SourceChannel   string   `json:"source_channel,omitempty"` // 渠道来源 (如 wecom_plugin)
+	Link            string   `json:"link,omitempty"`           // 消息溯源 (^msg-xxxx)
+	Tags            []string `json:"tags,omitempty"`           // 特征标签列表
 }
 
 // ReplyData 即时记账回执视图模型
@@ -36,10 +36,10 @@ type ReplyData struct {
 
 // CategoryStat 分类/成员开销占比项
 type CategoryStat struct {
-	Category      string  `json:"category"`       // 完整科目名 (如 Expenses:Food:Lunch)
-	ShortCategory string  `json:"short_category"` // 短分类或成员名 (如 Food > Lunch 或 zhaozhao)
-	Amount        float64 `json:"amount"`         // 发生总额
-	Percentage    float64 `json:"percentage"`     // 占总支出的百分比 (0~100)
+	Category    string  `json:"category"`     // 完整科目名 (如 Expenses:Food:Lunch)
+	DisplayName string  `json:"display_name"` // 分类或成员名 (如 Food > Lunch 或 zhaozhao)
+	Amount      float64 `json:"amount"`       // 发生总额
+	Percentage  float64 `json:"percentage"`   // 占总支出的百分比 (0~100)
 }
 
 // ExpenseItem 单笔大额开销项

@@ -48,7 +48,7 @@
       "amount": 4.00,
       "currency": "CNY",
       "date": "{{ .Today }}",
-      "payee": "蜜雪冰城(中关村店)",
+      "payee": "蜜雪冰城(高新店)",
       "narration": "冰鲜柠檬水",
       "category": "Expenses:Food:Drinks",
       "account": "",

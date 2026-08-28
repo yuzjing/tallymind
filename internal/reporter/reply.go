@@ -23,24 +23,21 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		// 提取展示名
 		displayName := cmp.Or(tx.Payee, tx.Narration, "日常消费")
 
-		// 提取末级分类
-		shortCat := getShortCategory(tx.Category)
-
 		items = append(items, TransactionItem{
-			Date:          tx.Date,
-			Payee:         tx.Payee,
-			Narration:     tx.Narration,
-			Category:      tx.Category,
-			ShortCategory: shortCat,
-			Account:       tx.Account,
-			Amount:        tx.Amount,
-			Currency:      cmp.Or(tx.Currency, "CNY"),
-			DisplayName:   displayName,
-			Reporter:      cmp.Or(tx.Meta.Reporter, "User"),
-			Owner:         cmp.Or(tx.Meta.Owner, "User"),
-			Beneficiary:   tx.Meta.Beneficiary,
-			SourceChannel: tx.Meta.SourceChannel,
-			Tags:          tx.Tags,
+			Date:            tx.Date,
+			Payee:           tx.Payee,
+			Narration:       tx.Narration,
+			Category:        tx.Category,
+			DisplayCategory: formatCategory(tx.Category, 2),
+			Account:         tx.Account,
+			Amount:          tx.Amount,
+			Currency:        cmp.Or(tx.Currency, "CNY"),
+			DisplayName:     displayName,
+			Reporter:        cmp.Or(tx.Meta.Reporter, "User"),
+			Owner:           cmp.Or(tx.Meta.Owner, "User"),
+			Beneficiary:     tx.Meta.Beneficiary,
+			SourceChannel:   tx.Meta.SourceChannel,
+			Tags:            tx.Tags,
 		})
 
 	}
@@ -51,7 +48,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		Currency:        items[0].Currency,
 		IsSingle:        count == 1,
 		PrimaryName:     items[0].DisplayName,
-		PrimaryCategory: items[0].ShortCategory,
+		PrimaryCategory: formatCategory(items[0].Category, 2),
 		Items:           items,
 		FirstItem:       items[0],
 		JumpURL:         jumpURL,
@@ -66,8 +63,8 @@ func (r ReplyData) SummaryHeadline() string {
 	}
 
 	if r.IsSingle {
-		return fmt.Sprintf("👌 已记好：%s ￥%.2f (%s)", r.PrimaryName, r.FirstItem.Amount, r.PrimaryCategory)
+		return fmt.Sprintf("已记好：%s ￥%.2f (%s)", r.PrimaryName, r.FirstItem.Amount, r.PrimaryCategory)
 	}
 
-	return fmt.Sprintf("👌 已记好：共计入 %d 笔账单，合计 ￥%.2f", r.Count, r.TotalAmount)
+	return fmt.Sprintf("已记好：共计入 %d 笔账单，合计 ￥%.2f", r.Count, r.TotalAmount)
 }
