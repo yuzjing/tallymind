@@ -1,7 +1,41 @@
+# templates/wecom/expense_success.yaml
 msgtype: "text"
 text:
-  content: {{ if .IsSingle }}
-    {{ printf "🌿 记账成功\n──────────────\n金额：￥%.2f (%s)\n项目：%s\n日期：%s\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>" .FirstItem.Amount .PrimaryCategory .PrimaryName .FirstItem.Date .JumpURL | quote }}
-  {{ else }}
-    {{ printf "🌿 记账成功 (共 %d 笔)\n──────────────\n合计：￥%.2f\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>" .Count .TotalAmount .JumpURL | quote }}
-  {{ end }}
+  content: >
+    {{- if eq .Count 0 -}}
+      {{ printf "👌 资产对账与断言已记录\n──────────────\n账户：%s\n当前余额：￥%.2f %s\n──────────────\n(Beancount 数学核对完成)"
+        .PrimaryName
+        .TotalAmount
+        .Currency
+      | quote }}
+    {{- else if .IsSingle -}}
+      {{- if .JumpURL -}}
+        {{ printf "🌿 记账成功\n──────────────\n金额：￥%.2f (%s)\n项目：%s\n日期：%s\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>"
+          .FirstItem.Amount
+          .PrimaryCategory
+          .PrimaryName
+          .FirstItem.Date
+          .JumpURL
+        | quote }}
+      {{- else -}}
+        {{ printf "🌿 记账成功\n──────────────\n金额：￥%.2f (%s)\n项目：%s\n日期：%s"
+          .FirstItem.Amount
+          .PrimaryCategory
+          .PrimaryName
+          .FirstItem.Date
+        | quote }}
+      {{- end -}}
+    {{- else -}}
+      {{- if .JumpURL -}}
+        {{ printf "🌿 记账成功 (共 %d 笔)\n──────────────\n合计：￥%.2f\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>"
+          .Count
+          .TotalAmount
+          .JumpURL
+        | quote }}
+      {{- else -}}
+        {{ printf "🌿 记账成功 (共 %d 笔)\n──────────────\n合计：￥%.2f"
+          .Count
+          .TotalAmount
+        | quote }}
+      {{- end -}}
+    {{- end -}}
