@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"cmp"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"sort"
@@ -141,8 +142,8 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		categoryStats = append(categoryStats, CategoryStat{
 			Category:    cat,
 			DisplayName: cat, // 此时 cat 已经是 formatCategory 提取后的纯大类 (如 "Food")
-			Amount:      sum,
-			Percentage:  pct,
+			Amount:      roundFloat(sum, 2),
+			Percentage:  roundFloat(pct, 1),
 		})
 	}
 	// ⭐️ 使用 sort.Slice 按金额从大到小倒序排序
@@ -161,8 +162,8 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		}
 		memberStats = append(memberStats, CategoryStat{
 			DisplayName: mem, // 成员名称 (如 "zhaozhao")
-			Amount:      sum,
-			Percentage:  pct,
+			Amount:      roundFloat(sum, 2),
+			Percentage:  roundFloat(pct, 1),
 		})
 	}
 	// ⭐️ 成员开销倒序排序
@@ -187,7 +188,7 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 			Date:        records[i].Date,
 			DisplayName: cmp.Or(records[i].Payee, records[i].Narration, "日常消费"),
 			Category:    formatCategory(records[i].Category, 2), //  明细保留二级细分 (如 "Transport > Maintenance")
-			Amount:      records[i].Amount,
+			Amount:      roundFloat(records[i].Amount, 2),       // 金额保留两位小数
 		})
 	}
 
@@ -196,7 +197,7 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	// -------------------------------------------------------------
 	trends := make([]TrendItem, 0, len(trendMap))
 	for d, sum := range trendMap {
-		trends = append(trends, TrendItem{Date: d, Amount: sum})
+		trends = append(trends, TrendItem{Date: d, Amount: roundFloat(sum, 2)})
 	}
 	sort.Slice(trends, func(i, j int) bool {
 		return trends[i].Date < trends[j].Date
@@ -212,10 +213,10 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	}
 
 	return &PeriodicReportData{
-		TotalExpense:      totalExpense,
-		TotalIncome:       totalIncome,
-		NetSavings:        savings,
-		SavingsRate:       savingsRate,
+		TotalExpense:      roundFloat(totalExpense, 2),
+		TotalIncome:       roundFloat(totalIncome, 2),
+		NetSavings:        roundFloat(savings, 2),
+		SavingsRate:       roundFloat(savingsRate, 1),
 		TransactionCount:  len(records),
 		CategoryBreakdown: categoryStats,
 		MemberBreakdown:   memberStats,
@@ -236,8 +237,8 @@ func formatCategory(fullCategory string, maxDepth int) string {
 	// 1. 剥离 Expenses:/Income:/Assets:/Liabilities:/Equity: 根前缀
 	trimmed := fullCategory
 	for _, prefix := range []string{"Expenses:", "Income:", "Liabilities:", "Assets:", "Equity:"} {
-		if strings.HasPrefix(trimmed, prefix) {
-			trimmed = strings.TrimPrefix(trimmed, prefix)
+		if after, ok := strings.CutPrefix(trimmed, prefix); ok {
+			trimmed = after
 			break
 		}
 	}
@@ -250,4 +251,14 @@ func formatCategory(fullCategory string, maxDepth int) string {
 
 	// 3. 用友好箭头拼接
 	return strings.Join(parts, " > ")
+}
+
+func roundFloat(val float64, precision ...int) float64 {
+	p := 6
+	if len(precision) > 0 {
+		p = precision[0]
+	}
+	ratio := math.Pow(10, float64(p))
+	return math.Round(val*ratio) / ratio
+
 }

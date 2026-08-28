@@ -44,7 +44,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 
 	return ReplyData{
 		Count:           count,
-		TotalAmount:     totalAmount,
+		TotalAmount:     roundFloat(totalAmount, 2),
 		Currency:        items[0].Currency,
 		IsSingle:        count == 1,
 		PrimaryName:     items[0].DisplayName,

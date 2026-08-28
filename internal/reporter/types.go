@@ -77,6 +77,9 @@ type PeriodicReportData struct {
 	SavingsRate       float64        `json:"savings_rate"`        // 储蓄率百分比 (0~100)
 	PrevExpense       float64        `json:"prev_expense"`        // 上期总支出 (用于环比)
 	ExpenseChangeRate float64        `json:"expense_change_rate"` // 支出环比增减率 (负数代表节省)
+	PrevIncome        float64        `json:"prev_income"`         // 👈 上期收入
+	IncomeChangeRate  float64        `json:"income_change_rate"`  // 👈 收入环比 %
+	PrevSavings       float64        `json:"prev_savings"`        // 👈 上期净结余
 	TransactionCount  int            `json:"transaction_count"`   // 总交易笔数
 	CategoryBreakdown []CategoryStat `json:"category_breakdown"`  // 支出分类排行榜
 	MemberBreakdown   []CategoryStat `json:"member_breakdown"`    // 成员开销排行榜

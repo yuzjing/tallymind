@@ -86,9 +86,18 @@ func GeneratePeriodicReport(basePath string, periodType string, targetTime time.
 	}
 
 	if periodType != "custom" {
-		if prevData, err := scanAndAggregatePeriod(basePath, prevStartDate, prevEndDate, isYearly); err == nil && prevData.TotalExpense > 0 {
-			data.PrevExpense = prevData.TotalExpense
-			data.ExpenseChangeRate = ((data.TotalExpense - prevData.TotalExpense) / prevData.TotalExpense) * 100
+		if prevData, err := scanAndAggregatePeriod(basePath, prevStartDate, prevEndDate, isYearly); err == nil {
+			// 支出环比
+			if prevData.TotalExpense > 0 {
+				data.PrevExpense = prevData.TotalExpense
+				data.ExpenseChangeRate = roundFloat(((data.TotalExpense-prevData.TotalExpense)/prevData.TotalExpense)*100, 1)
+			}
+			// 收入与结余环比数据记录
+			data.PrevIncome = prevData.TotalIncome
+			data.PrevSavings = prevData.NetSavings
+			if prevData.TotalIncome > 0 {
+				data.IncomeChangeRate = roundFloat(((data.TotalIncome-prevData.TotalIncome)/prevData.TotalIncome)*100, 1)
+			}
 		}
 	}
 
