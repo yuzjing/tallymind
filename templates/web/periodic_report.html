@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ .Title }} - TallyMind</title>
+    <!-- 轻量 ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         :root {
@@ -27,6 +28,7 @@
             padding: 16px 12px;
             min-height: 100vh;
         }
+        /* 响应式大盘容器：手机端 480px，PC 端自动扩展至 880px 双列现代大盘 */
         .report-container {
             width: 100%;
             max-width: 480px;
@@ -58,10 +60,12 @@
         .nav-btn { color: var(--primary); text-decoration: none; font-size: 12px; font-weight: 600; padding: 4px 6px; border-radius: 4px; }
         .nav-btn.disabled { color: #cbd5e1; cursor: not-allowed; }
 
+        /* 触发按钮 */
         .date-picker-trigger {
             position: relative;
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 4px;
             padding: 4px 12px;
             background: #f8fafc;
@@ -80,7 +84,7 @@
             height: 100%;
             opacity: 0;
             cursor: pointer;
-            pointer-events: none;
+            pointer-events: none; /* 点击冒泡给父容器执行 triggerDatePicker */
         }
 
         .custom-range-box {
@@ -113,24 +117,20 @@
         .kpi-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding-top: 14px; border-top: 1px dashed var(--border-color); text-align: center; }
         .kpi-sub-title { font-size: 11px; color: var(--text-muted); }
         .kpi-sub-val { font-size: 15px; font-weight: 700; margin-top: 4px; }
-        
-        .kpi-sub-badge {
-            margin-top: 3px;
-            font-size: 10px;
-            font-weight: 600;
-            line-height: 1.2;
-        }
+        .kpi-sub-badge { margin-top: 3px; font-size: 10px; font-weight: 600; line-height: 1.2; }
 
-        /* 状态色彩 */
+        /* 状态色彩类 */
         .kpi-sub-val.positive { color: var(--primary); }
         .kpi-sub-val.negative { color: var(--red); }
         .text-green { color: var(--green); }
         .text-red { color: var(--red); }
         .text-orange { color: var(--orange); }
+        .text-muted { color: var(--text-muted); }
 
         .card-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
         .chart-box { width: 100%; }
         
+        /* Top 5 金银铜排行榜 */
         .top-list-container { counter-reset: rank-counter; }
         .top-row { counter-increment: rank-counter; display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f8fafc; font-size: 13px; }
         .top-row:last-child { border-bottom: none; }
@@ -179,7 +179,8 @@
                     ‹ 上一{{ if eq .PeriodType "weekly" }}周{{ else if eq .PeriodType "monthly" }}月{{ else if eq .PeriodType "quarterly" }}季{{ else }}年{{ end }}
                 </a>
 
-                <div class="date-picker-trigger" onclick="openDatePicker()" title="点击选择日期">
+                <!-- ⭐️ 核心修复：点击触发 triggerDatePicker() -->
+                <div class="date-picker-trigger" onclick="triggerDatePicker()" title="点击选择日期">
                     <span class="date-display-text">{{ .DateRange }} <span style="font-size: 10px; color: var(--text-muted);">▼</span></span>
                     <input type="{{ if eq .PeriodType "monthly" }}month{{ else }}date{{ end }}"
                            id="nativeDatePicker"
@@ -206,7 +207,7 @@
                     <div class="kpi-label">本期总支出</div>
                     <div class="kpi-val">￥{{ printf "%.2f" .TotalExpense }}</div>
 
-                    <!-- 主支出环比胶囊 -->
+                    <!-- 主支出对比胶囊 -->
                     <div class="kpi-badge-wrapper">
                         {{ if .HasPrevData }}
                             <div class="kpi-badge">
@@ -229,14 +230,19 @@
                     </div>
                 </div>
 
-                <!-- ⭐️ 核心自适应：周报展示【入账/日均/笔均】，月/季/年报展示【收入/结余/储蓄率】 -->
+                <!-- 周报专属 vs 月/季/年报专属副指标 -->
                 <div class="kpi-grid">
                     {{ if eq .PeriodType "weekly" }}
-                    <!-- 周报专属副指标 (现金流与消费节奏) -->
                     <div>
                         <div class="kpi-sub-title">💵 本周入账</div>
                         <div class="kpi-sub-val text-green">￥{{ printf "%.0f" .TotalIncome }}</div>
-                        <div class="kpi-sub-badge"><span class="text-muted">流水记录</span></div>
+                        <div class="kpi-sub-badge">
+                            {{ if gt .TotalIncome 0.0 }}
+                            <span class="text-green">流水入账</span>
+                            {{ else }}
+                            <span class="text-muted">无入账</span>
+                            {{ end }}
+                        </div>
                     </div>
                     <div>
                         <div class="kpi-sub-title">📅 日均支出</div>
@@ -249,7 +255,6 @@
                         <div class="kpi-sub-badge"><span class="text-muted">共 {{ .TransactionCount }} 笔</span></div>
                     </div>
                     {{ else }}
-                    <!-- 月/季/年报专属副指标 (资产损益与财富积累) -->
                     <div>
                         <div class="kpi-sub-title">💵 总收入</div>
                         <div class="kpi-sub-val text-green">￥{{ printf "%.0f" .TotalIncome }}</div>
@@ -261,7 +266,11 @@
                                 <span class="text-muted">-¥{{ printf "%.0f" (neg .IncomeChangeDiff) }} ↓</span>
                                 {{ end }}
                             {{ else }}
-                                <span class="text-muted">本期入账</span>
+                                {{ if gt .TotalIncome 0.0 }}
+                                <span class="text-green">本期入账</span>
+                                {{ else }}
+                                <span class="text-muted">无入账</span>
+                                {{ end }}
                             {{ end }}
                         </div>
                     </div>
@@ -278,7 +287,13 @@
                                 <span class="text-red">-¥{{ printf "%.0f" (neg .SavingsChangeDiff) }} ↓</span>
                                 {{ end }}
                             {{ else }}
-                                <span class="text-muted">{{ if ge .NetSavings 0.0 }}收支平衡{{ else }}本期赤字{{ end }}</span>
+                                {{ if gt .NetSavings 0.0 }}
+                                <span class="text-green">本期盈余</span>
+                                {{ else if lt .NetSavings 0.0 }}
+                                <span class="text-red">本期赤字</span>
+                                {{ else }}
+                                <span class="text-muted">收支平衡</span>
+                                {{ end }}
                             {{ end }}
                         </div>
                     </div>
@@ -287,7 +302,7 @@
                         <div class="kpi-sub-val">{{ printf "%.1f" .SavingsRate }}%</div>
                         <div class="kpi-sub-badge">
                             {{ if gt .SavingsRate 0.0 }}
-                            <span class="text-primary">盈余沉淀</span>
+                            <span class="text-primary">收入留存</span>
                             {{ else }}
                             <span class="text-muted">无净储蓄</span>
                             {{ end }}
@@ -342,11 +357,14 @@
             {{ end }}
         </div>
 
+        <!-- ⭐️ 核心修复：按钮使用动态生成的带 Token 的 {{ .PanelPath }} -->
+        {{ if .PanelPath }}
         <div class="report-actions">
-            <a class="btn-panel" href="/tallyview/" target="_blank">
+            <a class="btn-panel" href="{{ .PanelPath }}" target="_blank">
                 <span>📊</span> 查看完整 Beancount 账本与大盘
             </a>
         </div>
+        {{ end }}
 
         <div class="report-footer">
             <span>TallyMind 自动化复式记账分析系统</span>
@@ -386,18 +404,17 @@
             return currencyFormatter.format(val);
         }
 
-        function openDatePicker() {
+        // ⭐️ 核心修复：显式调用 showPicker() 弹出日历
+        function triggerDatePicker() {
             const input = document.getElementById('nativeDatePicker');
             if (!input) return;
-            try {
-                if (typeof input.showPicker === 'function') {
+            if (typeof input.showPicker === 'function') {
+                try {
                     input.showPicker();
                     return;
-                }
-            } catch (e) {
-                // 降级兼容
+                } catch (e) {}
             }
-            input.type = 'date';
+            input.focus();
             input.click();
         }
 

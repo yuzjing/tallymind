@@ -2,9 +2,11 @@
 package handler
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -93,6 +95,17 @@ func (h *ReportHandler) RenderReport(c *gin.Context) {
 	}
 
 	reportData.Token = token
+	// ⭐️ 5. 动态生成 Fava 大盘直达安全链接 (带 panel_sso 签名 Token)
+	if strings.TrimSpace(h.cfg.App.PanelURL) != "" && strings.TrimSpace(h.cfg.App.PanelPath) != "" {
+		ssoToken := crypto.GenerateSignedToken(
+			h.cfg.App.ReceiptSignSecret,
+			"panel_sso",
+			2*time.Hour,
+			crypto.DefaultTokenSignLen,
+		)
+		cleanPath := "/" + strings.Trim(h.cfg.App.PanelPath, "/")
+		reportData.PanelPath = fmt.Sprintf("%s/?token=%s", cleanPath, ssoToken)
+	}
 
 	// 即时渲染 templates/web/periodic_report.html
 	tmplPath := filepath.Join(h.cfg.App.TemplateDir, h.cfg.App.ReportTemplate)

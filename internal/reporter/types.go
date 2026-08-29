@@ -68,6 +68,7 @@ type PeriodicReportData struct {
 	NextDate   string `json:"next_date"`
 	HasNext    bool   `json:"has_next"`
 	Token      string `json:"token"`
+	PanelPath  string `json:"panel_path,omitempty"`
 
 	TotalExpense float64 `json:"total_expense"`
 	TotalIncome  float64 `json:"total_income"`
