@@ -1,41 +1,43 @@
 # templates/wecom/expense_success.yaml
 msgtype: "text"
 text:
-  content: >
-    {{- if eq .Count 0 -}}
-      {{ printf "👌 资产对账与断言已记录\n──────────────\n账户：%s\n当前余额：￥%.2f %s\n──────────────\n(Beancount 数学核对完成)"
-        .PrimaryName
-        .TotalAmount
-        .Currency
-      | quote }}
-    {{- else if .IsSingle -}}
-      {{- if .JumpURL -}}
-        {{ printf "🌿 记账成功\n──────────────\n金额：￥%.2f (%s)\n项目：%s\n日期：%s\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>"
-          .FirstItem.Amount
-          .PrimaryCategory
-          .PrimaryName
-          .FirstItem.Date
-          .JumpURL
-        | quote }}
-      {{- else -}}
-        {{ printf "🌿 记账成功\n──────────────\n金额：￥%.2f (%s)\n项目：%s\n日期：%s"
-          .FirstItem.Amount
-          .PrimaryCategory
-          .PrimaryName
-          .FirstItem.Date
-        | quote }}
-      {{- end -}}
-    {{- else -}}
-      {{- if .JumpURL -}}
-        {{ printf "🌿 记账成功 (共 %d 笔)\n──────────────\n合计：￥%.2f\n──────────────\n🔗 <a href=\"%s\">查看账单明细 ›</a>"
-          .Count
-          .TotalAmount
-          .JumpURL
-        | quote }}
-      {{- else -}}
-        {{ printf "🌿 记账成功 (共 %d 笔)\n──────────────\n合计：￥%.2f"
-          .Count
-          .TotalAmount
-        | quote }}
-      {{- end -}}
-    {{- end -}}
+  content: |
+    {{- if eq .PrimaryCategory "资产对账" }}
+      {{- if .IsSingle }}
+    👌 资产对账与断言已记录
+    ──────────────
+    账户：{{ .FirstItem.Account }}
+    当前余额：￥{{ printf "%.2f" .FirstItem.Amount }} {{ .FirstItem.Currency }}
+    ──────────────
+    (Beancount 数学核对完成)
+      {{- else }}
+    👌 资产对账已记录 (共 {{ .Count }} 处)
+    ──────────────
+    {{- range .Items }}
+    • {{ .Account }}: ￥{{ printf "%.2f" .Amount }} {{ .Currency }}
+    {{- end }}
+    ──────────────
+    (Beancount 数学核对完成)
+      {{- end }}
+      {{- if .JumpURL }}
+    🔗 <a href="{{ .JumpURL }}">查看资产大盘 ›</a>
+      {{- end }}
+    {{- else if .IsSingle }}
+    🌿 记账成功
+    ──────────────
+    金额：￥{{ printf "%.2f" .FirstItem.Amount }} ({{ .PrimaryCategory }})
+    项目：{{ .PrimaryName }}
+    日期：{{ .FirstItem.Date }}
+      {{- if .JumpURL }}
+    ──────────────
+    🔗 <a href="{{ .JumpURL }}">查看账单明细 ›</a>
+      {{- end }}
+    {{- else }}
+    🌿 记账成功 (共 {{ .Count }} 笔)
+    ──────────────
+    合计：￥{{ printf "%.2f" .TotalAmount }}
+      {{- if .JumpURL }}
+    ──────────────
+    🔗 <a href="{{ .JumpURL }}">查看账单明细 ›</a>
+      {{- end }}
+    {{- end }}

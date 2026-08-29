@@ -131,11 +131,28 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 
 	// 5. 若具备唯一消息 ID 且包含常规交易，生成带时效签名的 H5 电子小票并放入缓存
 	var jumpURL string
-	if in.MessageID != "" && len(batch.Transactions) > 0 {
-		jumpURL = s.BuildReceiptURL(in.MessageID)
+	if in.MessageID != "" {
+		if len(batch.Transactions) > 0 {
+			// 常规交易：生成 H5 电子小票链接
+			jumpURL = s.BuildReceiptURL(in.MessageID)
+		} else if len(batch.BalanceAssertions) > 0 && s.cfg.App.PanelURL != "" && s.cfg.App.PanelPath != "" {
+			// ⭐️ 对账断言：生成 Fava 资产大盘直达链接
+			ssoToken := crypto.GenerateSignedToken(
+				s.cfg.App.ReceiptSignSecret,
+				"panel_sso",
+				2*time.Hour,
+				crypto.DefaultTokenSignLen,
+			)
+			cleanPath := "/" + strings.Trim(s.cfg.App.PanelPath, "/")
+			jumpURL = fmt.Sprintf("%s%s/?token=%s", strings.TrimRight(s.cfg.App.PublicURL, "/"), cleanPath, ssoToken)
+		}
+
 		previewImage := extractFirstImageURL(in.Attachments)
 		replyData := reporter.BuildReplyData(batch, jumpURL, previewImage)
-		s.SaveReceipt(in.MessageID, replyData)
+
+		if len(batch.Transactions) > 0 {
+			s.SaveReceipt(in.MessageID, replyData)
+		}
 		return replyData, nil
 	}
 
