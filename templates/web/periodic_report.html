@@ -60,7 +60,7 @@
         .nav-btn { color: var(--primary); text-decoration: none; font-size: 12px; font-weight: 600; padding: 4px 6px; border-radius: 4px; }
         .nav-btn.disabled { color: #cbd5e1; cursor: not-allowed; }
 
-        /* 触发按钮 */
+        /* ⭐️ 核心容器：物理定位 */
         .date-picker-trigger {
             position: relative;
             display: inline-flex;
@@ -73,10 +73,13 @@
             border-radius: 6px;
             cursor: pointer;
             user-select: none;
+            overflow: hidden;
         }
         .date-picker-trigger:active { background: #e2e8f0; }
-        .date-display-text { font-size: 12px; font-weight: 700; color: var(--text-main); }
-        .anchored-date-input {
+        .date-display-text { font-size: 12px; font-weight: 700; color: var(--text-main); pointer-events: none; }
+        
+        /* ⭐️ 核心突破：让透明 input 位于物理顶层 (z-index: 10, pointer-events: auto)，手指直接点击，全端必弹！ */
+        .native-touch-overlay {
             position: absolute;
             top: 0;
             left: 0;
@@ -84,7 +87,14 @@
             height: 100%;
             opacity: 0;
             cursor: pointer;
-            pointer-events: none; /* 点击冒泡给父容器执行 triggerDatePicker */
+            z-index: 10;
+            pointer-events: auto !important;
+            appearance: none; 
+            -webkit-appearance: none;
+            margin: 0;
+            padding: 0;
+            border: none;
+            font-size: 16px; /* 阻止 iOS 缩放 */
         }
 
         .custom-range-box {
@@ -179,12 +189,13 @@
                     ‹ 上一{{ if eq .PeriodType "weekly" }}周{{ else if eq .PeriodType "monthly" }}月{{ else if eq .PeriodType "quarterly" }}季{{ else }}年{{ end }}
                 </a>
 
-                <!-- ⭐️ 核心修复：点击触发 triggerDatePicker() -->
-                <div class="date-picker-trigger" onclick="triggerDatePicker()" title="点击选择日期">
+                <!-- ⭐️ 物理直接触碰区 (透明 input 位于物理最顶层) -->
+                <div class="date-picker-trigger" title="点击选择日期">
                     <span class="date-display-text">{{ .DateRange }} <span style="font-size: 10px; color: var(--text-muted);">▼</span></span>
+                    
                     <input type="{{ if eq .PeriodType "monthly" }}month{{ else }}date{{ end }}"
                            id="nativeDatePicker"
-                           class="anchored-date-input"
+                           class="native-touch-overlay"
                            value="{{ if eq .PeriodType "monthly" }}{{ printf "%.7s" .TargetDate }}{{ else }}{{ .TargetDate }}{{ end }}"
                            onchange="handleDateSelect(this.value, '{{ .PeriodType }}')">
                 </div>
@@ -357,7 +368,7 @@
             {{ end }}
         </div>
 
-        <!-- ⭐️ 核心修复：按钮使用动态生成的带 Token 的 {{ .PanelPath }} -->
+        <!-- 底部大盘直达 -->
         {{ if .PanelPath }}
         <div class="report-actions">
             <a class="btn-panel" href="{{ .PanelPath }}" target="_blank">
@@ -404,18 +415,25 @@
             return currencyFormatter.format(val);
         }
 
-        // ⭐️ 核心修复：显式调用 showPicker() 弹出日历
-        function triggerDatePicker() {
-            const input = document.getElementById('nativeDatePicker');
-            if (!input) return;
-            if (typeof input.showPicker === 'function') {
-                try {
-                    input.showPicker();
-                    return;
-                } catch (e) {}
+        // ⭐️ 核心特性探测与桌面 Firefox 兼容性自动修复
+        const dateInput = document.getElementById('nativeDatePicker');
+        if (dateInput) {
+            // 特性检测：当前浏览器是否真正支持 type="month"
+            const test = document.createElement('input');
+            test.setAttribute('type', 'month');
+            if (test.type !== 'month' && dateInput.type === 'text') {
+                // 在不支持 month 的桌面端 Firefox 上，自动降级为 date 确保必弹日历
+                dateInput.type = 'date';
             }
-            input.focus();
-            input.click();
+
+            // PC 端桌面浏览器点击时显式调用 showPicker()
+            dateInput.addEventListener('click', function(e) {
+                if (typeof this.showPicker === 'function') {
+                    try {
+                        this.showPicker();
+                    } catch (err) {}
+                }
+            });
         }
 
         function handleDateSelect(val, period) {
