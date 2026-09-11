@@ -29,7 +29,7 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load("config.toml")
 	if err != nil {
 		slog.Error("加载配置文件失败", "err", err)
 		os.Exit(1)
