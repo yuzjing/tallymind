@@ -5,13 +5,13 @@ import "time"
 
 // Config 账本领域专属配置
 type Config struct {
-	FilePath         string              `yaml:"file_path"`
-	DefaultCurrency  string              `yaml:"default_currency"`
-	DefaultReporter  string              `yaml:"default_reporter"`
-	FallbackCategory string              `yaml:"fallback_category"`
-	FallbackAccount  string              `yaml:"fallback_account"`
-	FallbackPayee    string              `yaml:"fallback_payee"`
-	Members          map[string][]string `yaml:"members"`
+	DataDir          string              `toml:"data_dir"`
+	DefaultCurrency  string              `toml:"default_currency"`
+	DefaultReporter  string              `toml:"default_reporter"`
+	FallbackCategory string              `toml:"fallback_category"`
+	FallbackAccount  string              `toml:"fallback_account"`
+	FallbackPayee    string              `toml:"fallback_payee"`
+	Members          map[string][]string `toml:"members"`
 }
 
 // RequestContext 传输层与系统上下文

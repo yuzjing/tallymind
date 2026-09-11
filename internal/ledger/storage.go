@@ -11,7 +11,7 @@ import (
 )
 
 // AppendBatchTransactions 自动按年份拆分文件并追加写入
-func AppendBatchTransactions(basePath string, req *BatchTransactions, cfg Config, ctx RequestContext) error {
+func AppendBatchTransactions(dataDir string, req *BatchTransactions, cfg Config, ctx RequestContext) error {
 	yearlyTextMap := make(map[string]*strings.Builder)
 
 	req.EnsureDefaults(cfg, ctx)
@@ -22,7 +22,7 @@ func AppendBatchTransactions(basePath string, req *BatchTransactions, cfg Config
 			return err
 		}
 
-		targetPath := GetYearlyFilePath(basePath, tx.Date)
+		targetPath := GetYearlyFilePath(dataDir, tx.Date)
 		if _, exists := yearlyTextMap[targetPath]; !exists {
 			yearlyTextMap[targetPath] = &strings.Builder{}
 		}
@@ -39,7 +39,7 @@ func AppendBatchTransactions(basePath string, req *BatchTransactions, cfg Config
 			b.Date = ctx.MessageTime.Format("2006-01-02")
 		}
 
-		targetPath := GetYearlyFilePath(basePath, b.Date)
+		targetPath := GetYearlyFilePath(dataDir, b.Date)
 		if _, exists := yearlyTextMap[targetPath]; !exists {
 			yearlyTextMap[targetPath] = &strings.Builder{}
 		}
@@ -70,14 +70,12 @@ func AppendBatchTransactions(basePath string, req *BatchTransactions, cfg Config
 }
 
 // GetYearlyFilePath 辅助函数：根据交易日期推导年份文件路径
-func GetYearlyFilePath(basePath string, dateStr string) string {
-	dir := filepath.Dir(basePath)
+func GetYearlyFilePath(dataDir string, dateStr string) string {
 	year := time.Now().Format("2006")
-
 	parts := strings.Split(dateStr, "-")
 	if len(parts) > 0 && len(parts[0]) == 4 {
 		year = parts[0]
 	}
 
-	return filepath.Join(dir, fmt.Sprintf("%s.bean", year))
+	return filepath.Join(dataDir, fmt.Sprintf("%s.bean", year))
 }

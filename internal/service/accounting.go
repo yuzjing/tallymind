@@ -125,7 +125,7 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 		MessageTime:   in.MessageTime,
 		Location:      in.Location,
 	}
-	if err := ledger.AppendBatchTransactions(s.ledgerConfig.FilePath, batch, s.ledgerConfig, reqCtx); err != nil {
+	if err := ledger.AppendBatchTransactions(s.ledgerConfig.DataDir, batch, s.ledgerConfig, reqCtx); err != nil {
 		return reporter.ReplyData{}, fmt.Errorf("账本存盘失败: %w", err)
 	}
 
@@ -173,7 +173,7 @@ func (s *AccountingService) RecordDirect(ctx context.Context, userID, sourceChan
 		MessageTime:   time.Now(),
 	}
 
-	if err := ledger.AppendBatchTransactions(s.ledgerConfig.FilePath, req, s.ledgerConfig, reqCtx); err != nil {
+	if err := ledger.AppendBatchTransactions(s.ledgerConfig.DataDir, req, s.ledgerConfig, reqCtx); err != nil {
 		return reporter.ReplyData{}, fmt.Errorf("账本存盘失败: %w", err)
 	}
 
@@ -269,7 +269,7 @@ func resolveActor(rawInput string, members map[string][]string, fallback string)
 // GetPeriodicReport 业务用例：获取指定周期的财务分析报表
 func (s *AccountingService) GetPeriodicReport(ctx context.Context, periodType string, refTime time.Time, customStart, customEnd string) (*reporter.PeriodicReportData, error) {
 	jumpURL := s.BuildReportURL(periodType)
-	return reporter.GeneratePeriodicReport(s.ledgerConfig.FilePath, periodType, refTime, customStart, customEnd, jumpURL)
+	return reporter.GeneratePeriodicReport(s.ledgerConfig.DataDir, periodType, refTime, customStart, customEnd, jumpURL)
 }
 
 // BuildReportURL 生成带 2 小时时效签名的周期报表安全链接

@@ -1,0 +1,99 @@
+# ==============================================================================
+# 1. 应用与运行环境配置
+# ==============================================================================
+[app]
+env = "production"                           # 支持 development、production
+port = 8080                              
+public_url = "https://tallymind.example.com" # 对外访问域名
+template_dir = "templates"                 # 模板文件根目录
+receipt_template = ""                        # 小票模板路径 (留空使用默认)
+receipt_sign_secret = ""                     # 小票安全验签私钥 (2 小时时效)
+report_template = ""                         # 报表模板路径
+panel_url = "http://panel:5000"              # 资产看板后端容器地址 (留空关闭反代)
+panel_path = "/panel"                        # 看板动态挂载路由前缀
+
+# 核心子系统开关
+enable_http_api = true                       # 是否开启通用 REST API
+enable_wecom_http = true                     # 是否开启企微自建应用 HTTP 回调
+enable_wecom_wss = false                     # 是否开启企微 WSS 机器人长连接
+enable_llm = true                            # 是否开启 AI 智能解析
+enable_reporter = false                      # 是否开启定时报表
+
+# 通知渠道定义
+report_channels = ["wecom"]
+alert_channels = ["wecom"]
+
+# ==============================================================================
+# 2. 日志系统控制 (生产就绪，防止磁盘暴满)
+# ==============================================================================
+[log]
+level = "info"                               # 日志级别: debug | info | warn | error
+to_stdout = true                             # 是否输出到终端 (Docker / journalctl 推荐开启)
+
+[log.file]
+enabled = false                              # 文件落盘开关: 默认关闭 (纯终端)，需要本地看 log 再开
+dir = "logs"                               # 日志存放目录
+max_size = 10                                # 单个文件最大体积 (MB)，超出自动滚动切割
+max_backups = 3                              # 最多保留的历史旧日志文件数
+max_age = 14                                 # 最多保留多少天以前的日志 (天)
+compress = true                              # 历史旧日志是否自动 gzip 压缩
+
+
+# ==============================================================================
+# 4. 多服务商大模型池配置 (Failover 容灾)
+# ==============================================================================
+[llm]
+prompt_template = "prompt/system_prompt.md"
+
+[[llm.providers]]
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+model = "gemini-2.5-flash"
+api_key = "AQ.GeminiKey1_Account1..."
+max_tokens = 4096
+temperature = 0.2
+top_p = 0.0
+frequency_penalty = 0.0
+presence_penalty = 0.0
+timeout = "30s"
+
+[[llm.providers]]
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+model = "gemini-2.5-flash"
+api_key = "AQ.GeminiKey2_Account2..."
+max_tokens = 4096
+temperature = 0.2
+top_p = 0.0
+frequency_penalty = 0.0
+presence_penalty = 0.0
+timeout = "30s"
+
+# ==============================================================================
+# 5. 企业微信渠道配置
+# ==============================================================================
+[wecom]
+corp_id = "ww_your_corpid"
+agent_id = 1000002
+secret = "your_app_secret"
+token = "your_callback_token"
+encoding_aes_key = "your_43_chars_encoding_aes_key"
+success_template = "wecom/expense_success.yaml"
+failure_template = "wecom/expense_fail.yaml"
+report_template = "wecom/report.yaml"
+
+# WSS 机器人模式扩展参数 (可选)
+bot_id = ""
+bot_secret = ""
+
+# ==============================================================================
+# 6. Beancount 纯文本复式记账配置
+# ==============================================================================
+[ledger]
+data_dir = ["data"]
+default_currency = "CNY"
+default_reporter = "User"
+fallback_category = "Expenses:Uncategorized"
+fallback_account = "Assets:Pending:Unknown"
+fallback_payee = "日常消费"
+
+[ledger.members]
+husband = ["user", "老公", "先生", "丈夫"]

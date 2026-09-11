@@ -13,3 +13,4 @@ bin/
 .vscode/
 .idea/
 config.yaml
+config.toml

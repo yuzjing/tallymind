@@ -4,9 +4,8 @@ package main
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"log/slog"
-	"path/filepath"
 
 	"os"
 	"os/signal"
@@ -23,44 +22,11 @@ import (
 	"tallymind/internal/cron"
 	"tallymind/internal/handler"
 	"tallymind/internal/llm"
+	"tallymind/internal/logger"
 	"tallymind/internal/notifier"
 	"tallymind/internal/plugin/wecom"
 	"tallymind/internal/service"
 )
-
-func initLogger(logLevel, logDir string) {
-	var level slog.Level
-
-	switch logLevel {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo // 默认 info
-	}
-
-	var writers []io.Writer = []io.Writer{os.Stdout}
-
-	if logDir != "" {
-		_ = os.MkdirAll(logDir, 0755)
-		logFilePath := filepath.Join(logDir, "tallymind.log")
-		logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err == nil {
-			writers = append(writers, logFile)
-		}
-	}
-
-	multiwriter := io.MultiWriter(writers...)
-
-	logger := slog.New(slog.NewTextHandler(multiwriter, &slog.HandlerOptions{
-		Level: level,
-	}))
-
-	slog.SetDefault(logger) // 设置全局日志记录器
-}
 
 func main() {
 	cfg, err := config.Load("config.yaml")
@@ -68,7 +34,8 @@ func main() {
 		slog.Error("加载配置文件失败", "err", err)
 		os.Exit(1)
 	}
-	initLogger(cfg.App.LogLevel, cfg.App.LogDir)
+	closeLogger := logger.InitLogger(cfg.Log)
+	defer closeLogger()
 
 	slog.Info("🚀 tallymind 启动中 | 应用开关配置", "App", cfg.App)
 	slog.Info("📁 账本存储配置", "ledger", cfg.Ledger)
@@ -169,7 +136,8 @@ func main() {
 
 		// 协程启动 Gin HTTP 服务
 		go func() {
-			if err := r.Run(":" + cfg.App.Port); err != nil {
+			addr := fmt.Sprintf(":%d", cfg.App.Port)
+			if err := r.Run(addr); err != nil {
 				slog.Error("HTTP 服务异常退出", "err", err)
 				os.Exit(1)
 			}
