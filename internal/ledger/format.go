@@ -99,7 +99,14 @@ func (b *BalanceAssertion) ToBeancountFormat(cfg Config) string {
 
 	targetAccount := formatAccountWithOwner(b.Account, b.Owner)
 
+	// ⭐️ 1. 声明容差修饰串（默认空）
+	tolerancePart := ""
+
 	if b.AutoPad {
+		// ⭐️ 2. 当开启自动平账时，强制零容差！
+		// 逼迫 Beancount 对哪怕 0.01 元也必须生成填充交易，彻底杜绝 Unused Pad 报错
+		tolerancePart = " ~ 0.00"
+
 		padAcc := cmp.Or(b.PadAccount, "Equity:Opening-Balances")
 		padDate := b.Date
 		if t, err := time.Parse("2006-01-02", b.Date); err == nil {
@@ -110,7 +117,9 @@ func (b *BalanceAssertion) ToBeancountFormat(cfg Config) string {
 		fmt.Fprintf(&builder, "%s pad %-32s  %s\n", padDate, targetAccount, padAcc)
 	}
 
-	fmt.Fprintf(&builder, "%s balance %-32s  %8.2f %s\n\n", b.Date, targetAccount, b.Amount, currency)
+	// ⭐️ 3. 将 tolerancePart 拼入金额与币种之间
+	fmt.Fprintf(&builder, "%s balance %-32s  %8.2f%s %s\n\n",
+		b.Date, targetAccount, b.Amount, tolerancePart, currency)
 	return builder.String()
 }
 

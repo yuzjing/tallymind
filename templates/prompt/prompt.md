@@ -37,18 +37,32 @@
    - invoice_status: 电子发票填 "done"，需开票/待报销填 "pending"，无则设为 ""。
    - original_amount / discount_amount: 原价与优惠减免金额 (无则设为 "")。
    - time / location / link: 小票具体时间(HH:MM:SS)、分店地点、订单流水号 (无则设为 "")。
+8. 【首次开户 / 初始化资产 / 资金注入】特殊规则：
+   - 当用户意图为建账开户（如“初始化我的资产”、“开户：招行5万，微信300”）：
+   - 将每个账户分别提取为一条交易，放入 transactions 列表中：
+   - category: 必须固定填 "Equity:Opening-Balances"
+   - account: 对应的资产渠道（如 Assets:Bank:CMB）
+   - payee: 固定填 "开户初始化"
+   - narration: 填写如 "招商银行借记卡初始余额"
+   - type: 固定填 "income"
+   - 此时 balance_assertions 必须设为 []。
 
-二、 资产对账与自动平账断言 (balance_assertions 列表 - 凡提及当前余额或发送余额截图时提取):
-1. 若用户意图为【汇报当前余额 / 常规对账】(如"当前钱包还剩 540"、"招行卡余额 12500"、"微信零钱还剩 300")：
-   - 提取断言: {"date": "{{ .Today }}", "account": "Assets:Bank:CMB", "amount": 12500.00, "currency": "CNY", "owner": "", "auto_pad": false}
-   - 此时 transactions 列表必须设为 []。
-2. 若用户意图为【平账 / 强制对齐 / 自动找平 / 期初资产注入】(如"微信零钱强制平账500"、"期初微信钱包有10000"、"少了几十块强制对齐"):
-   - 提取断言: {"date": "{{ .Today }}", "account": "Assets:WeChat:Wallet", "amount": 500.00, "currency": "CNY", "owner": "", "auto_pad": true, "pad_account": "..."}
-   - pad_account 智能判定规则:
-     • 涉及【期初建账 / 初始资金注入 / 首次开户】➔ 填 "Equity:Opening-Balances" (注入净资产，不计入日常消费)；
-     • 涉及【日常记账差额找平 / 漏记支出冲销】➔ 填 "Expenses:Other:Uncategorized" (计入当期损耗支出)。
-   - 此时 transactions 列表必须设为 []。
-3. 普通日常消费流水，balance_assertions 必须输出为 []。
+二、 资产对账与余额断言 (balance_assertions 列表 - 凡提及账户当前结余、资产清单或需要平账时提取):
+
+1. 【常规对账 / 余额打卡】(只核验，不修改历史，auto_pad = false):
+   - 触发场景：用户汇报当前结余或发送余额截图（如 "当前微信还剩 540"、"招行卡余额 12500"、"查了下余额宝有 3000"）。
+   - 提取格式：{"date": "{{ .Today }}", "account": "Assets:Bank:CMB", "amount": 12500.00, "currency": "CNY", "owner": "", "auto_pad": false}
+
+2. 【强制对齐 / 智能平账】(发现差额强制拉平，auto_pad = true):
+   - 触发场景：用户要求强制抹平差额，或【首次使用初始化资产/开户录入清单】。
+   - 提取格式：{"date": "{{ .Today }}", "account": "Assets:WeChat:Wallet", "amount": 500.00, "currency": "CNY", "owner": "", "auto_pad": true, "pad_account": "..."}
+   - pad_account 的领域映射规则（严禁臆测）：
+     • 场景 A【首次开户 / 初始化建账 / 期初资产清单】➔ 固定填 "Equity:Opening-Balances"（注入基准净资产，不计入当期损益）。
+     • 场景 B【日常账目差额抹平 / 找零漏记对齐】➔ 固定填 "Expenses:Other:Uncategorized"（计入当期未知损耗）。
+
+3. 【复合输入处理原则】：
+   - 若用户一句话中同时包含消费和余额变动（如 "喝咖啡花了 25，微信还剩 100"），必须同时在 transactions 和 balance_assertions 中提取对应实体，严禁漏提。
+
 
 【输出 JSON 示例】：
 {
@@ -57,7 +71,7 @@
       "amount": 4.00,
       "currency": "CNY",
       "date": "{{ .Today }}",
-      "payee": "蜜雪冰城(中关村店)",
+      "payee": "蜜雪冰城(高新店)",
       "narration": "冰鲜柠檬水",
       "category": "Expenses:Food:Drinks",
       "account": "",
@@ -70,7 +84,7 @@
         "original_amount": "6.00",
         "discount_amount": "2.00",
         "time": "14:20:00",
-        "location": "中关村店",
+        "location": "高新区",
         "link": "20260824001"
       }
     }

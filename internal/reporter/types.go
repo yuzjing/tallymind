@@ -8,6 +8,7 @@ type TransactionItem struct {
 	Narration       string   `json:"narration"`
 	Category        string   `json:"category"`
 	DisplayCategory string   `json:"display_category"`
+	Type            string   `json:"type"`
 	Account         string   `json:"account"`
 	Amount          float64  `json:"amount"`
 	Currency        string   `json:"currency"`

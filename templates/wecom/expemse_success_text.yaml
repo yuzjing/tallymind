@@ -2,16 +2,16 @@
 msgtype: "text"
 text:
   content: |
-    {{- if eq .PrimaryCategory "资产对账" }}
+    {{- if or (eq .PrimaryCategory "期初建账") (eq .PrimaryCategory "资产对账") }}
       {{- if .IsSingle }}
-    👌 资产对账与断言已记录
+    ✦ {{ .PrimaryCategory }}完成
     ──────────────
     账户：{{ .FirstItem.Account }}
     当前余额：￥{{ printf "%.2f" .FirstItem.Amount }} {{ .FirstItem.Currency }}
     ──────────────
-    (Beancount 数学核对完成)
+    (Beancount 基准已核准)
       {{- else }}
-    👌 资产对账已记录 (共 {{ .Count }} 处)
+    ✦ {{ .PrimaryCategory }}已记录 (共 {{ .Count }} 处)
     ──────────────
     {{- range .Items }}
     • {{ .Account }}: ￥{{ printf "%.2f" .Amount }} {{ .Currency }}
@@ -23,9 +23,19 @@ text:
     🔗 <a href="{{ .JumpURL }}">查看资产大盘 ›</a>
       {{- end }}
     {{- else if .IsSingle }}
-    🌿 记账成功
+      {{- if eq .FirstItem.Type "income" }}
+    🎉 收入入账
+    ──────────────
+    金额：+￥{{ printf "%.2f" .FirstItem.Amount }} ({{ .PrimaryCategory }})
+      {{- else if eq .FirstItem.Type "refund" }}
+    ↩️ 退款入账
+    ──────────────
+    金额：+￥{{ printf "%.2f" .FirstItem.Amount }} ({{ .PrimaryCategory }})
+      {{- else }}
+    ✦ 记账成功
     ──────────────
     金额：￥{{ printf "%.2f" .FirstItem.Amount }} ({{ .PrimaryCategory }})
+      {{- end }}
     项目：{{ .PrimaryName }}
     日期：{{ .FirstItem.Date }}
       {{- if .JumpURL }}
@@ -33,7 +43,7 @@ text:
     🔗 <a href="{{ .JumpURL }}">查看账单明细 ›</a>
       {{- end }}
     {{- else }}
-    🌿 记账成功 (共 {{ .Count }} 笔)
+    ✦ 记账成功 (共 {{ .Count }} 笔)
     ──────────────
     合计：￥{{ printf "%.2f" .TotalAmount }}
       {{- if .JumpURL }}
