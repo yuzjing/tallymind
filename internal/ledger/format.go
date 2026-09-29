@@ -76,7 +76,17 @@ func (t *Transaction) ToBeancountFormat() string {
 	absAmount := math.Abs(t.Amount)
 	categoryAmount := absAmount
 	accountAmount := -absAmount
-	if t.Type == "refund" || t.Type == "income" || strings.HasPrefix(t.Category, "Equity:") {
+	if strings.HasPrefix(t.Category, "Equity:") {
+		// ⭐️ 核心修复：如果是负债建账（如信用卡初始欠款），负债记负，权益对冲记正
+		if strings.HasPrefix(t.Account, "Liabilities:") {
+			categoryAmount = absAmount
+			accountAmount = -absAmount
+		} else {
+			// 正常资产建账（储蓄卡初始余额），资产记正，权益对冲记负
+			categoryAmount = -absAmount
+			accountAmount = absAmount
+		}
+	} else if t.Type == "refund" || t.Type == "income" || strings.HasPrefix(t.Category, "Equity:") {
 		categoryAmount = -absAmount
 		accountAmount = absAmount
 	}

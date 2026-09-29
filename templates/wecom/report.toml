@@ -1,0 +1,15 @@
+msgtype = "text"
+
+[text]
+content = """
+✨ {{ .Title }} ({{ .DateRange }})
+──────────────
+支出：￥{{ printf "%.2f" .TotalExpense }}
+收入：￥{{ printf "%.2f" .TotalIncome }}
+笔数：共 {{ .TransactionCount }} 笔消费
+{{- if .TopExpenses }}
+大额：{{ (index .TopExpenses 0).DisplayName }} (￥{{ printf "%.2f" (index .TopExpenses 0).Amount }})
+{{- end }}
+──────────────
+🔗 <a href="{{ .JumpURL }}">查看完整财务分析报表 ›</a>
+"""

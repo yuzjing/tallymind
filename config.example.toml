@@ -76,9 +76,9 @@ agent_id = 1000002
 secret = "your_app_secret"
 token = "your_callback_token"
 encoding_aes_key = "your_43_chars_encoding_aes_key"
-success_template = "wecom/expense_success.yaml"
-failure_template = "wecom/expense_fail.yaml"
-report_template = "wecom/report.yaml"
+success_template = "wecom/expense_success.toml"
+failure_template = "wecom/expense_fail.toml"
+report_template = "wecom/report.toml"
 
 # WSS 机器人模式扩展参数 (可选)
 bot_id = ""

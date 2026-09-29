@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	txHeaderRegex = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\s+\*\s+"([^"]*)"(?:\s+"([^"]*)")?`)
+	txHeaderRegex = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\s+[*!]\s+"([^"]+)"(?:\s+"([^"]+)")?`)
 	postingRegex  = regexp.MustCompile(`^\s+([A-Za-z0-9:]+)\s+([-\d.]+)\s+([A-Za-z]+)`)
 	metaRegex     = regexp.MustCompile(`^\s+([a-z_]+):\s+"([^"]+)"`)
 )
@@ -54,17 +54,41 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		scanner := bufio.NewScanner(file)
 		var currentTx *rawTxRecord
 
+		// 抽取交易收敛动作
+		flushTx := func() {
+			if currentTx != nil {
+				if currentTx.Amount > 0 {
+					records = append(records, *currentTx)
+				}
+				currentTx = nil
+			}
+		}
+
 		for scanner.Scan() {
 			line := scanner.Text()
 
 			// 1. 匹配交易主行 (日期、商户、摘要)
 			if matches := txHeaderRegex.FindStringSubmatch(line); len(matches) > 0 {
-				txDate, _ := time.Parse("2006-01-02", matches[1])
+				flushTx() // 遇到新交易头，先收敛前一笔交易
+				txDate, _ := time.ParseInLocation("2006-01-02", matches[1], startDate.Location())
 				if !txDate.Before(startDate) && !txDate.After(endDate) {
+
+					// 1. 提取交易头信息
+					dateStr := matches[1]
+					p1 := matches[2]
+					p2 := ""
+					if len(matches) > 3 {
+						p2 = matches[3]
+					}
+					// 语义归正：Beancount 规范中，只有一段引号时它代表 Narration
+					payee, narration := p1, p2
+					if p2 == "" {
+						payee, narration = "", p1
+					}
 					currentTx = &rawTxRecord{
-						Date:      matches[1],
-						Payee:     matches[2],
-						Narration: matches[3],
+						Date:      dateStr,
+						Payee:     payee,
+						Narration: narration,
 					}
 				} else {
 					currentTx = nil
@@ -117,11 +141,13 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 			}
 
 			// 空行代表一笔交易结束，写入切片
-			if strings.TrimSpace(line) == "" && currentTx != nil && currentTx.Amount > 0 {
-				records = append(records, *currentTx)
-				currentTx = nil
+			if strings.TrimSpace(line) == "" {
+				flushTx()
 			}
+
 		}
+
+		flushTx()
 
 		if scanErr := scanner.Err(); scanErr != nil {
 			_ = file.Close()
