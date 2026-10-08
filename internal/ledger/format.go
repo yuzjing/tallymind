@@ -43,7 +43,9 @@ func (t *Transaction) ToBeancountFormat() string {
 
 	fmt.Fprintf(&builder, "%s %s \"%s\"%s%s%s\n", t.Date, flag, t.Payee, narrationPart, tagString, linkString)
 
+	owner := ""
 	if t.Meta != nil {
+		owner = t.Meta.Owner
 		metaVal := reflect.ValueOf(*t.Meta)
 		metaType := reflect.TypeFor[Metadata]()
 
@@ -73,27 +75,34 @@ func (t *Transaction) ToBeancountFormat() string {
 		}
 	}
 
+	// ⭐️ 核心改进 1：统一在格式化层进行 4 层命名空间注入（Account 与 转账 Category 双重保护）
+	categoryAccount := formatAccountWithOwner(t.Category, owner)
+	targetAccount := formatAccountWithOwner(t.Account, owner)
+
 	absAmount := math.Abs(t.Amount)
 	categoryAmount := absAmount
 	accountAmount := -absAmount
+
 	if strings.HasPrefix(t.Category, "Equity:") {
-		// ⭐️ 核心修复：如果是负债建账（如信用卡初始欠款），负债记负，权益对冲记正
+		// 负债建账（如信用卡初始欠款）：负债记负，权益对冲记正
 		if strings.HasPrefix(t.Account, "Liabilities:") {
 			categoryAmount = absAmount
 			accountAmount = -absAmount
 		} else {
-			// 正常资产建账（储蓄卡初始余额），资产记正，权益对冲记负
+			// 正常资产建账（储蓄卡初始余额）：资产记正，权益对冲记负
 			categoryAmount = -absAmount
 			accountAmount = absAmount
 		}
-	} else if t.Type == "refund" || t.Type == "income" || strings.HasPrefix(t.Category, "Equity:") {
+	} else if t.Type == "refund" || t.Type == "income" {
 		categoryAmount = -absAmount
 		accountAmount = absAmount
 	}
+	// 注：当 t.Type == "transfer" (内部转账/还信用卡) 时，走默认分支：
+	// categoryAmount = +absAmount (转入方增加), accountAmount = -absAmount (转出方扣减)，符号完全精确！
 
 	fmt.Fprintf(&builder, "  %-32s  %8.2f %s\n  %-32s  %8.2f %s\n\n",
-		t.Category, categoryAmount, t.Currency,
-		t.Account, accountAmount, t.Currency,
+		categoryAccount, categoryAmount, t.Currency,
+		targetAccount, accountAmount, t.Currency,
 	)
 
 	return builder.String()
@@ -109,12 +118,9 @@ func (b *BalanceAssertion) ToBeancountFormat(cfg Config) string {
 
 	targetAccount := formatAccountWithOwner(b.Account, b.Owner)
 
-	// ⭐️ 1. 声明容差修饰串（默认空）
 	tolerancePart := ""
 
 	if b.AutoPad {
-		// ⭐️ 2. 当开启自动平账时，强制零容差！
-		// 逼迫 Beancount 对哪怕 0.01 元也必须生成填充交易，彻底杜绝 Unused Pad 报错
 		tolerancePart = " ~ 0.00"
 
 		padAcc := cmp.Or(b.PadAccount, "Equity:Opening-Balances")
@@ -127,7 +133,6 @@ func (b *BalanceAssertion) ToBeancountFormat(cfg Config) string {
 		fmt.Fprintf(&builder, "%s pad %-32s  %s\n", padDate, targetAccount, padAcc)
 	}
 
-	// ⭐️ 3. 将 tolerancePart 拼入金额与币种之间
 	fmt.Fprintf(&builder, "%s balance %-32s  %8.2f%s %s\n\n",
 		b.Date, targetAccount, b.Amount, tolerancePart, currency)
 	return builder.String()
@@ -145,7 +150,6 @@ func formatAccountWithOwner(account, owner string) string {
 		return acc
 	}
 
-	// ⭐️ 核心修复：强制将 owner 首字母大写 (如 zhaozhao -> Zhaozhao)，符合 Beancount 词法规范！
 	ownerTitle := capitalize(owner)
 
 	parts := strings.SplitN(acc, ":", 2)
@@ -161,7 +165,6 @@ func formatAccountWithOwner(account, owner string) string {
 	return fmt.Sprintf("%s:%s:%s", root, ownerTitle, rest)
 }
 
-// capitalize 将字符串首字母转为大写
 func capitalize(s string) string {
 	if s == "" {
 		return ""
