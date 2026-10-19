@@ -28,9 +28,10 @@ content = """
 ──────────────
 金额：+￥{{ printf "%.2f" .FirstItem.Amount }} ({{ .PrimaryCategory }})
   {{- else if eq .FirstItem.Type "refund" }}
-↩️ 退款入账
+↩️ 退款入账 (原路冲减)
 ──────────────
-金额：+￥{{ printf "%.2f" .FirstItem.Amount }} ({{ .PrimaryCategory }})
+退回金额：+￥{{ printf "%.2f" .FirstItem.Amount }}
+冲减类目：{{ .PrimaryCategory }}
   {{- else }}
 ✨ 记账成功
 ──────────────
@@ -45,7 +46,14 @@ content = """
 {{- else }}
 ✨ 记账成功 (共 {{ .Count }} 笔)
 ──────────────
-合计：￥{{ printf "%.2f" .TotalAmount }}
+{{- if and .HasExpense .HasIncome }}
+支出合计：￥{{ printf "%.2f" .ExpenseTotal }}
+入账合计：+￥{{ printf "%.2f" .IncomeTotal }}
+{{- else if .HasIncome }}
+入账合计：+￥{{ printf "%.2f" .IncomeTotal }}
+{{- else }}
+支出合计：￥{{ printf "%.2f" .ExpenseTotal }}
+{{- end }}
   {{- if .JumpURL }}
 ──────────────
 🔗 <a href="{{ .JumpURL }}">查看账单明细 ›</a>

@@ -24,7 +24,11 @@ type TransactionItem struct {
 // ReplyData 即时记账回执视图模型
 type ReplyData struct {
 	Count           int               `json:"count"`
-	TotalAmount     float64           `json:"total_amount"`
+	TotalAmount     float64           `json:"total_amount"`  // 综合主金额
+	ExpenseTotal    float64           `json:"expense_total"` // 纯支出总额 (正数)
+	IncomeTotal     float64           `json:"income_total"`  // 纯入账总额 (收入+退款入账, 正数)
+	HasExpense      bool              `json:"has_expense"`   // 是否包含支出
+	HasIncome       bool              `json:"has_income"`    // 是否包含入账
 	Currency        string            `json:"currency"`
 	IsSingle        bool              `json:"is_single"`
 	PrimaryName     string            `json:"primary_name"`
@@ -57,7 +61,7 @@ type TrendItem struct {
 	Amount float64 `json:"amount"` // 支出金额
 }
 
-// internal/reporter/types.go 片段补充
+// PeriodicReportData 周期财务报表视图模型
 type PeriodicReportData struct {
 	PeriodType string `json:"period_type"`
 	Title      string `json:"title"`
@@ -76,9 +80,8 @@ type PeriodicReportData struct {
 	NetSavings   float64 `json:"net_savings"`
 	SavingsRate  float64 `json:"savings_rate"`
 
-	// ⭐️ 核心新增：日均支出与笔均消费 (专供周报)
-	DailyAverage      float64 `json:"daily_average"`       // 日均支出 (如 ¥180.50/天)
-	AvgPerTransaction float64 `json:"avg_per_transaction"` // 笔均消费 (如 ¥45.20/笔)
+	DailyAverage      float64 `json:"daily_average"`       // 日均支出
+	AvgPerTransaction float64 `json:"avg_per_transaction"` // 笔均消费
 
 	HasPrevData       bool    `json:"has_prev_data"`
 	PrevExpense       float64 `json:"prev_expense"`
@@ -89,7 +92,7 @@ type PeriodicReportData struct {
 	IncomeChangeDiff float64 `json:"income_change_diff"`
 
 	PrevSavings       float64 `json:"prev_savings"`
-	SavingsChangeDiff float64 `json:"savings_change_diff"` // 净结余改善/恶化绝对值
+	SavingsChangeDiff float64 `json:"savings_change_diff"`
 
 	TransactionCount  int            `json:"transaction_count"`
 	CategoryBreakdown []CategoryStat `json:"category_breakdown"`

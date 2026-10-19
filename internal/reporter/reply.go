@@ -1,58 +1,65 @@
+// internal/reporter/reply.go
 package reporter
 
 import (
 	"cmp"
 	"fmt"
 	"strings"
+
 	"tallymind/internal/ledger"
 )
 
-// ⭐️ 统一图标定义（引入 Gemini 经典 AI 星芒 ✨，保持极简灵动）
+// 统一图标定义
 const (
 	IconGemini = "✨"  // Gemini 核心智能星芒
 	IconIncome = "🎉"  // 收入
 	IconRefund = "↩️" // 退款
-	IconBullet = "✦"  // 内部项目点缀符号
+	IconBullet = "✦"  // 条目装饰符
 )
 
-// BuildReplyData 纯函数：提炼领域实体为纯净的展示数据模型
+// BuildReplyData 纯函数：提炼领域实体为纯净展示视图模型
 func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) ReplyData {
 	if batch == nil {
 		return ReplyData{}
 	}
 
 	// -------------------------------------------------------------
-	// 场景 A：常规消费/收入/退款/开户初始化交易流水
+	// 场景 A：常规消费/收入/退款/开户初始化流水
 	// -------------------------------------------------------------
 	if len(batch.Transactions) > 0 {
 		count := len(batch.Transactions)
-		var totalAmount float64
+		var expenseTotal, incomeTotal float64
+		var hasExpense, hasIncome bool
 		items := make([]TransactionItem, 0, count)
 
-		// ⭐️ 协同判定：检查是否为开户建账流水
 		isGenesis := false
 
 		for _, tx := range batch.Transactions {
-			// 退款冲减总额，其余累加
-			if tx.Type == "refund" {
-				totalAmount -= tx.Amount
-			} else {
-				totalAmount += tx.Amount
+			// ⭐️ 核心修正：严格区分现金流向，退款和收入在当次结算中全部计入入账流
+			switch tx.Type {
+			case "income":
+				incomeTotal += tx.Amount
+				hasIncome = true
+			case "refund":
+				incomeTotal += tx.Amount
+				hasIncome = true
+			default: // expense / transfer
+				expenseTotal += tx.Amount
+				hasExpense = true
 			}
 
-			// 如果是 Equity 注入，归为期初建账
 			if strings.HasPrefix(tx.Category, "Equity:") {
 				isGenesis = true
 			}
 
-			displayName := cmp.Or(tx.Payee, tx.Narration, "日常消费")
+			displayName := cmp.Or(tx.Payee, tx.Narration, "日常交易")
 			displayCat := formatCategory(tx.Category, 2)
 			if isGenesis {
 				displayCat = "期初建账"
 			}
 
 			items = append(items, TransactionItem{
-				Type:            tx.Type, // expense / income / refund
+				Type:            tx.Type,
 				Date:            tx.Date,
 				Payee:           tx.Payee,
 				Narration:       tx.Narration,
@@ -66,6 +73,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 				Owner:           cmp.Or(tx.Meta.Owner, "User"),
 				Beneficiary:     tx.Meta.Beneficiary,
 				SourceChannel:   tx.Meta.SourceChannel,
+				Link:            tx.Meta.Link,
 				Tags:            tx.Tags,
 			})
 		}
@@ -75,9 +83,23 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			primaryCategory = "期初建账"
 		}
 
+		// 主金额判定：纯入账显示总入账，纯支出显示总支出，混合时显示净额
+		var totalAmount float64
+		if hasIncome && !hasExpense {
+			totalAmount = incomeTotal
+		} else if hasExpense && !hasIncome {
+			totalAmount = expenseTotal
+		} else {
+			totalAmount = expenseTotal - incomeTotal
+		}
+
 		return ReplyData{
 			Count:           count,
 			TotalAmount:     roundFloat(totalAmount, 2),
+			ExpenseTotal:    roundFloat(expenseTotal, 2),
+			IncomeTotal:     roundFloat(incomeTotal, 2),
+			HasExpense:      hasExpense,
+			HasIncome:       hasIncome,
 			Currency:        cmp.Or(batch.Transactions[0].Currency, "CNY"),
 			IsSingle:        count == 1,
 			PrimaryName:     items[0].DisplayName,
@@ -90,7 +112,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 	}
 
 	// -------------------------------------------------------------
-	// 场景 B：资产断言/对账场景（日常对账）
+	// 场景 B：资产断言/对账场景
 	// -------------------------------------------------------------
 	if len(batch.BalanceAssertions) > 0 {
 		count := len(batch.BalanceAssertions)
@@ -132,12 +154,12 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 
 // SummaryHeadline 极简单行摘要
 func (r ReplyData) SummaryHeadline() string {
-	// 1. 资产场景（期初建账 VS 日常核对）
+	// 1. 资产场景
 	if r.PrimaryCategory == "期初建账" {
 		if r.IsSingle {
 			return fmt.Sprintf("%s 资产建账完成：%s 初始金额 ￥%.2f %s", IconGemini, r.PrimaryName, r.TotalAmount, r.Currency)
 		}
-		return fmt.Sprintf("%s 资产建账完成：共建立 %d 处初始基准账户，合计 ￥%.2f", IconGemini, r.Count, r.TotalAmount)
+		return fmt.Sprintf("%s 资产建账完成：共建立 %d 处初始账户，合计 ￥%.2f", IconGemini, r.Count, r.TotalAmount)
 	}
 
 	if r.PrimaryCategory == "资产对账" {
@@ -161,32 +183,15 @@ func (r ReplyData) SummaryHeadline() string {
 			}
 		}
 
-		var expenseTotal, incomeTotal float64
-		var hasExpense, hasIncome bool
-
-		for _, item := range r.Items {
-			switch item.Type {
-			case "income":
-				incomeTotal += item.Amount
-				hasIncome = true
-			case "refund":
-				expenseTotal -= item.Amount
-				hasExpense = true
-			default:
-				expenseTotal += item.Amount
-				hasExpense = true
-			}
+		if r.HasExpense && r.HasIncome {
+			return fmt.Sprintf("%s 记账成功：共 %d 笔（支出 ￥%.2f，入账 +￥%.2f）",
+				IconGemini, r.Count, r.ExpenseTotal, r.IncomeTotal)
 		}
-
-		if hasExpense && hasIncome {
-			return fmt.Sprintf("%s 记账成功：共 %d 笔（支出 ￥%.2f，收入 +￥%.2f）",
-				IconGemini, r.Count, roundFloat(expenseTotal, 2), roundFloat(incomeTotal, 2))
+		if r.HasIncome && !r.HasExpense {
+			return fmt.Sprintf("%s 收入入账：共 %d 笔入账，合计 +￥%.2f",
+				IconIncome, r.Count, r.IncomeTotal)
 		}
-		if hasIncome && !hasExpense {
-			return fmt.Sprintf("%s 收入入账：共计入 %d 笔收入，合计 +￥%.2f",
-				IconIncome, r.Count, roundFloat(incomeTotal, 2))
-		}
-		return fmt.Sprintf("%s 记账成功：共计入 %d 笔账单，合计 ￥%.2f", IconGemini, r.Count, r.TotalAmount)
+		return fmt.Sprintf("%s 记账成功：共计入 %d 笔支出，合计 ￥%.2f", IconGemini, r.Count, r.ExpenseTotal)
 	}
 
 	return fmt.Sprintf("%s 操作已成功处理", IconGemini)
