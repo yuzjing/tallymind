@@ -32,13 +32,17 @@ type rawTxRecord struct {
 	Beneficiary string
 }
 
-// scanAndAggregatePeriod 扫描并聚合指定时间区间的全量财务流水 (支持跨年多文件安全扫描)
-func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYearly bool) (*PeriodicReportData, error) {
+// scanAndAggregatePeriod 扫描并聚合指定时间区间的全量财务流水
+// ⭐️ 新增 targetMember 参数：为空或 "family" 代表全家；否则仅统计该成员
+func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYearly bool, targetMember string) (*PeriodicReportData, error) {
 	var records []rawTxRecord
 	var totalExpense, totalIncome float64
 	categoryMap := make(map[string]float64)
 	memberExpenseMap := make(map[string]float64)
 	trendMap := make(map[string]float64)
+
+	targetMember = strings.ToLower(strings.TrimSpace(targetMember))
+	isFamilyScope := targetMember == "" || targetMember == "family" || targetMember == "all"
 
 	startYear, endYear := startDate.Year(), endDate.Year()
 	for y := startYear; y <= endYear; y++ {
@@ -54,7 +58,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		scanner := bufio.NewScanner(file)
 		var currentTx *rawTxRecord
 
-		// 抽取交易收敛动作 (仅净支出 > 0 的交易才收录至大额支出清单，纯退款不计入榜单)
 		flushTx := func() {
 			if currentTx != nil {
 				if currentTx.Amount > 0 {
@@ -67,9 +70,9 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		for scanner.Scan() {
 			line := scanner.Text()
 
-			// 1. 匹配交易主行 (日期、商户、摘要)
+			// 1. 匹配交易主行
 			if matches := txHeaderRegex.FindStringSubmatch(line); len(matches) > 0 {
-				flushTx() // 遇到新交易头，先收敛前一笔交易
+				flushTx()
 				txDate, _ := time.ParseInLocation("2006-01-02", matches[1], startDate.Location())
 				if !txDate.Before(startDate) && !txDate.After(endDate) {
 					dateStr := matches[1]
@@ -94,7 +97,7 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 			}
 
 			if currentTx != nil {
-				// 2. 匹配元数据行 (owner / beneficiary)
+				// 2. 匹配元数据行
 				if mMatches := metaRegex.FindStringSubmatch(line); len(mMatches) > 0 {
 					switch mMatches[1] {
 					case "owner":
@@ -105,41 +108,48 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 					continue
 				}
 
-				// 3. 匹配账户记账分录行
+				// 3. 匹配账户分录行
 				if pMatches := postingRegex.FindStringSubmatch(line); len(pMatches) > 0 {
 					account := pMatches[1]
 					amt, _ := strconv.ParseFloat(pMatches[2], 64)
 
-					// ⭐️ 核心修复：放开 amt > 0 限制！
-					// Expenses 正数代表日常消费支出，负数代表原路退款冲减 (如电视支架 -356.03)
+					// ⭐️ 核心判定：成员隔离过滤
+					// 若指定了个人口径，检查：出资人、受益人或结算账户是否属于该成员
+					if !isFamilyScope {
+						own := strings.ToLower(currentTx.Owner)
+						ben := strings.ToLower(currentTx.Beneficiary)
+						acc := strings.ToLower(account)
+						// 只要 owner、beneficiary 匹配，或者账户命名空间包含该成员（如 Assets:Zhaozhao）
+						matchMember := (own == targetMember) || (ben == targetMember) || strings.Contains(acc, ":"+targetMember+":")
+						if !matchMember {
+							continue // 非本人口径直接跳过
+						}
+					}
+
+					// 支出统计
 					if strings.HasPrefix(account, "Expenses:") {
 						currentTx.Category = account
 						currentTx.Amount += amt
 						totalExpense += amt
 
-						// 宏观一级大类聚合与冲减 (如 "Housing", "Food")
 						macroCat := formatCategory(account, 1)
 						categoryMap[macroCat] += amt
 
-						// 走势按月或按日归拢与冲减
 						trendKey := currentTx.Date
 						if isYearly && len(currentTx.Date) >= 7 {
 							trendKey = currentTx.Date[:7]
 						}
 						trendMap[trendKey] += amt
 
-						// 成员归属 (优先受益人，其次出资人)
-						targetMember := cmp.Or(currentTx.Beneficiary, currentTx.Owner, "家庭公用")
-						memberExpenseMap[targetMember] += amt
+						targetDisplayMember := cmp.Or(currentTx.Beneficiary, currentTx.Owner, "家庭公用")
+						memberExpenseMap[targetDisplayMember] += amt
 
 					} else if strings.HasPrefix(account, "Income:") && amt < 0 {
-						// 收入与价保补偿退款统计 (Beancount 中收入记录为负数，累加时转正数)
 						totalIncome += -amt
 					}
 				}
 			}
 
-			// 空行代表一笔交易结束，写入切片
 			if strings.TrimSpace(line) == "" {
 				flushTx()
 			}
@@ -154,13 +164,11 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		_ = file.Close()
 	}
 
-	// -------------------------------------------------------------
-	// 1. 分类排行榜聚合与排序 (环形图使用，清理冲减后 <= 0 的类别)
-	// -------------------------------------------------------------
+	// 汇总排序等逻辑保持原样...
 	categoryStats := make([]CategoryStat, 0, len(categoryMap))
 	for cat, sum := range categoryMap {
 		if sum <= 0 {
-			continue // 冲减后若为0或净退款不展示在正向环形图中
+			continue
 		}
 		pct := 0.0
 		if totalExpense > 0 {
@@ -177,9 +185,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		return categoryStats[i].Amount > categoryStats[j].Amount
 	})
 
-	// -------------------------------------------------------------
-	// 2. 成员开销排行榜聚合与排序 (柱状图使用)
-	// -------------------------------------------------------------
 	memberStats := make([]CategoryStat, 0, len(memberExpenseMap))
 	for mem, sum := range memberExpenseMap {
 		if sum <= 0 {
@@ -199,9 +204,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		return memberStats[i].Amount > memberStats[j].Amount
 	})
 
-	// -------------------------------------------------------------
-	// 3. 筛选 Top 5 大额开销清单
-	// -------------------------------------------------------------
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Amount > records[j].Amount
 	})
@@ -219,9 +221,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		})
 	}
 
-	// -------------------------------------------------------------
-	// 4. 趋势数据排序 (按日期升序)
-	// -------------------------------------------------------------
 	trends := make([]TrendItem, 0, len(trendMap))
 	for d, sum := range trendMap {
 		trends = append(trends, TrendItem{Date: d, Amount: roundFloat(sum, 2)})
@@ -230,9 +229,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		return trends[i].Date < trends[j].Date
 	})
 
-	// -------------------------------------------------------------
-	// 5. 结余与储蓄率指标计算
-	// -------------------------------------------------------------
 	savings := totalIncome - totalExpense
 	savingsRate := 0.0
 	if totalIncome > 0 && savings > 0 {
