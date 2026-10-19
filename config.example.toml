@@ -24,11 +24,11 @@ monthly_report_time = "1 09:30"
 [[app.reporter_targets]]
 name = "家庭群大盘"
 channel = "webhook"
-url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_BOT_KEY"
+url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
 scope = "family"
 periods = ["weekly", "monthly"]
 
-# ⭐️ 目标 2：Zhaozhao 个人私聊（自建应用推送，仅统计本人开销，仅订阅周报）
+# ⭐️ 目标 2：个人私聊（自建应用推送，仅统计本人开销，仅订阅周报）
 [[app.reporter_targets]]
 name = "个人复盘"
 channel = "app"
