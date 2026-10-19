@@ -41,6 +41,11 @@ type AppConfig struct {
 	EnableLLM       bool `toml:"enable_llm"`
 	EnableReporter  bool `toml:"enable_reporter"`
 
+	WeeklyReportTime  string `toml:"weekly_report_time"`  // 默认 "Monday 08:30" 或 "Sunday 20:00"
+	MonthlyReportTime string `toml:"monthly_report_time"` // 默认 "1 09:00"
+
+	ReporterTargets []ReporterTarget `toml:"reporter_targets"`
+
 	ReportChannels []string `toml:"report_channels"`
 	AlertChannels  []string `toml:"alert_channels"`
 }
@@ -92,6 +97,16 @@ type LLMProviderConfig struct {
 type LLMConfig struct {
 	Providers      []LLMProviderConfig `toml:"providers"`
 	PromptTemplate string              `toml:"prompt_template"`
+}
+
+// 推送目标
+type ReporterTarget struct {
+	Name    string   `json:"name"`    // 目标名称
+	Channel string   `json:"channel"` // 通道类型“webhook”/"app"
+	URL     string   `json:"url"`     // 目标 URL
+	ToUser  string   `json:"tu_user"` // 接收人 UserID，多人员用 | 分隔 (channel="app" 时必填)
+	Scope   string   `json:"scope"`   // 统计口径: "family" (全家大盘) 或具体成员如 "zhaozhao"
+	Periods []string `toml:"periods"` // 订阅周期列表: ["weekly", "monthly"]
 }
 
 // ToDomain 将 toml 配置转换为纯净的 llm.Config 领域实体
@@ -182,6 +197,9 @@ func setDefaults(cfg *Config) {
 	cfg.WeCom.SuccessTemplate = cmp.Or(cfg.WeCom.SuccessTemplate, "wecom/expense_success.toml")
 	cfg.WeCom.FailureTemplate = cmp.Or(cfg.WeCom.FailureTemplate, "wecom/expense_fail.toml")
 	cfg.WeCom.ReportTemplate = cmp.Or(cfg.WeCom.ReportTemplate, "wecom/report.toml")
+
+	cfg.App.WeeklyReportTime = cmp.Or(cfg.App.WeeklyReportTime, "Monday 08:30")
+	cfg.App.MonthlyReportTime = cmp.Or(cfg.App.MonthlyReportTime, "1 09:00")
 
 }
 

@@ -18,6 +18,23 @@ enable_wecom_http = true                     # 是否开启企微自建应用 HT
 enable_wecom_wss = false                     # 是否开启企微 WSS 机器人长连接
 enable_llm = true                            # 是否开启 AI 智能解析
 enable_reporter = false                      # 是否开启定时报表
+weekly_report_time = "Sunday 20:00"
+monthly_report_time = "1 09:30"
+
+[[app.reporter_targets]]
+name = "家庭群大盘"
+channel = "webhook"
+url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_BOT_KEY"
+scope = "family"
+periods = ["weekly", "monthly"]
+
+# ⭐️ 目标 2：Zhaozhao 个人私聊（自建应用推送，仅统计本人开销，仅订阅周报）
+[[app.reporter_targets]]
+name = "个人复盘"
+channel = "app"
+to_user = "personal"
+scope = "personal"
+periods = ["weekly"]
 
 # 通知渠道定义
 report_channels = ["wecom"]

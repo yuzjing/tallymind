@@ -54,7 +54,7 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		scanner := bufio.NewScanner(file)
 		var currentTx *rawTxRecord
 
-		// 抽取交易收敛动作
+		// 抽取交易收敛动作 (仅净支出 > 0 的交易才收录至大额支出清单，纯退款不计入榜单)
 		flushTx := func() {
 			if currentTx != nil {
 				if currentTx.Amount > 0 {
@@ -72,15 +72,12 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 				flushTx() // 遇到新交易头，先收敛前一笔交易
 				txDate, _ := time.ParseInLocation("2006-01-02", matches[1], startDate.Location())
 				if !txDate.Before(startDate) && !txDate.After(endDate) {
-
-					// 1. 提取交易头信息
 					dateStr := matches[1]
 					p1 := matches[2]
 					p2 := ""
 					if len(matches) > 3 {
 						p2 = matches[3]
 					}
-					// 语义归正：Beancount 规范中，只有一段引号时它代表 Narration
 					payee, narration := p1, p2
 					if p2 == "" {
 						payee, narration = "", p1
@@ -113,28 +110,30 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 					account := pMatches[1]
 					amt, _ := strconv.ParseFloat(pMatches[2], 64)
 
-					// 支出统计 (以 Expenses: 开头的正数金额)
-					if strings.HasPrefix(account, "Expenses:") && amt > 0 {
+					// ⭐️ 核心修复：放开 amt > 0 限制！
+					// Expenses 正数代表日常消费支出，负数代表原路退款冲减 (如电视支架 -356.03)
+					if strings.HasPrefix(account, "Expenses:") {
 						currentTx.Category = account
 						currentTx.Amount += amt
 						totalExpense += amt
 
-						// ⭐️ 核心聚合：使用 formatCategory(account, 1) 归拢为宏观一级大类 (如 "Food", "Transport")
+						// 宏观一级大类聚合与冲减 (如 "Housing", "Food")
 						macroCat := formatCategory(account, 1)
 						categoryMap[macroCat] += amt
 
-						// 走势按月或按日归拢
+						// 走势按月或按日归拢与冲减
 						trendKey := currentTx.Date
 						if isYearly && len(currentTx.Date) >= 7 {
 							trendKey = currentTx.Date[:7]
 						}
 						trendMap[trendKey] += amt
 
-						// 成员归属 (优先算给受益人，其次算出资人)
+						// 成员归属 (优先受益人，其次出资人)
 						targetMember := cmp.Or(currentTx.Beneficiary, currentTx.Owner, "家庭公用")
 						memberExpenseMap[targetMember] += amt
+
 					} else if strings.HasPrefix(account, "Income:") && amt < 0 {
-						// 收入统计 (Beancount 中收入记录为负数，累加时转正数)
+						// 收入与价保补偿退款统计 (Beancount 中收入记录为负数，累加时转正数)
 						totalIncome += -amt
 					}
 				}
@@ -144,7 +143,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 			if strings.TrimSpace(line) == "" {
 				flushTx()
 			}
-
 		}
 
 		flushTx()
@@ -157,22 +155,24 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	}
 
 	// -------------------------------------------------------------
-	// 1. 分类排行榜聚合与排序 (环形图使用)
+	// 1. 分类排行榜聚合与排序 (环形图使用，清理冲减后 <= 0 的类别)
 	// -------------------------------------------------------------
 	categoryStats := make([]CategoryStat, 0, len(categoryMap))
 	for cat, sum := range categoryMap {
+		if sum <= 0 {
+			continue // 冲减后若为0或净退款不展示在正向环形图中
+		}
 		pct := 0.0
 		if totalExpense > 0 {
 			pct = (sum / totalExpense) * 100
 		}
 		categoryStats = append(categoryStats, CategoryStat{
 			Category:    cat,
-			DisplayName: cat, // 此时 cat 已经是 formatCategory 提取后的纯大类 (如 "Food")
+			DisplayName: cat,
 			Amount:      roundFloat(sum, 2),
 			Percentage:  roundFloat(pct, 1),
 		})
 	}
-	// ⭐️ 使用 sort.Slice 按金额从大到小倒序排序
 	sort.Slice(categoryStats, func(i, j int) bool {
 		return categoryStats[i].Amount > categoryStats[j].Amount
 	})
@@ -182,17 +182,19 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	// -------------------------------------------------------------
 	memberStats := make([]CategoryStat, 0, len(memberExpenseMap))
 	for mem, sum := range memberExpenseMap {
+		if sum <= 0 {
+			continue
+		}
 		pct := 0.0
 		if totalExpense > 0 {
 			pct = (sum / totalExpense) * 100
 		}
 		memberStats = append(memberStats, CategoryStat{
-			DisplayName: mem, // 成员名称 (如 "zhaozhao")
+			DisplayName: mem,
 			Amount:      roundFloat(sum, 2),
 			Percentage:  roundFloat(pct, 1),
 		})
 	}
-	// ⭐️ 成员开销倒序排序
 	sort.Slice(memberStats, func(i, j int) bool {
 		return memberStats[i].Amount > memberStats[j].Amount
 	})
@@ -200,7 +202,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	// -------------------------------------------------------------
 	// 3. 筛选 Top 5 大额开销清单
 	// -------------------------------------------------------------
-	// ⭐️ 对所有交易按单笔金额倒序排序
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Amount > records[j].Amount
 	})
@@ -213,8 +214,8 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		topExpenses = append(topExpenses, ExpenseItem{
 			Date:        records[i].Date,
 			DisplayName: cmp.Or(records[i].Payee, records[i].Narration, "日常消费"),
-			Category:    formatCategory(records[i].Category, 2), //  明细保留二级细分 (如 "Transport > Maintenance")
-			Amount:      roundFloat(records[i].Amount, 2),       // 金额保留两位小数
+			Category:    formatCategory(records[i].Category, 2),
+			Amount:      roundFloat(records[i].Amount, 2),
 		})
 	}
 
@@ -251,16 +252,10 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	}, nil
 }
 
-// formatCategory 剥离会计根前缀，并按指定最大层级深度 depth 截断格式化
-// - maxDepth = 1  ➔ 仅取宏观大类 (如 "Food", 专供环形图聚合)
-// - maxDepth = 2  ➔ 取两级层级 (如 "Food > Lunch", 专供小票与 Top5 明细)
-// - maxDepth <= 0 ➔ 保留所有子层级 (如 "Food > Lunch > Hotpot")
 func formatCategory(fullCategory string, maxDepth int) string {
 	if fullCategory == "" {
 		return "未分类"
 	}
-
-	// 1. 剥离 Expenses:/Income:/Assets:/Liabilities:/Equity: 根前缀
 	trimmed := fullCategory
 	for _, prefix := range []string{"Expenses:", "Income:", "Liabilities:", "Assets:", "Equity:"} {
 		if after, ok := strings.CutPrefix(trimmed, prefix); ok {
@@ -268,14 +263,10 @@ func formatCategory(fullCategory string, maxDepth int) string {
 			break
 		}
 	}
-
-	// 2. 按冒号切分层级
 	parts := strings.Split(trimmed, ":")
 	if maxDepth > 0 && len(parts) > maxDepth {
 		parts = parts[:maxDepth]
 	}
-
-	// 3. 用友好箭头拼接
 	return strings.Join(parts, " > ")
 }
 
@@ -286,5 +277,4 @@ func roundFloat(val float64, precision ...int) float64 {
 	}
 	ratio := math.Pow(10, float64(p))
 	return math.Round(val*ratio) / ratio
-
 }

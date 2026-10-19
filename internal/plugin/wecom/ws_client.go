@@ -13,7 +13,7 @@ import (
 
 	"tallymind/internal/config"
 	"tallymind/internal/notifier"
-	"tallymind/internal/service" // 👈 统一只依赖业务服务层
+	"tallymind/internal/service"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -31,13 +31,11 @@ type WSFrame struct {
 	Body    json.RawMessage `json:"body,omitempty"`
 }
 
-// 1. 鉴权订阅请求 body
 type SubscribeBody struct {
 	BotID     string `json:"bot_id"`
 	BotSecret string `json:"secret"`
 }
 
-// 2. 消息回调 body
 type MsgCallbackBody struct {
 	MsgID       string `json:"msgid"`
 	AIBotID     string `json:"aibotid"`
@@ -54,7 +52,7 @@ type MsgCallbackBody struct {
 
 type WSClient struct {
 	wecomCfg       config.WeComConfig
-	accountService *service.AccountingService // 👈 聚合为单个业务大脑
+	accountService *service.AccountingService
 	conn           *websocket.Conn
 	mu             sync.Mutex
 }
@@ -66,7 +64,6 @@ func NewWSClient(wecomCfg config.WeComConfig, accountService *service.Accounting
 	}
 }
 
-// buildWeComRespondBody 将通用的 notifier.Message 转为企微官方数据体
 func buildWeComRespondBody(msg notifier.Message) *MessageRequest {
 	switch msg.Type {
 	case notifier.TypeImage:
@@ -98,20 +95,18 @@ func buildWeComRespondBody(msg notifier.Message) *MessageRequest {
 	}
 }
 
-// safeWriteJSON 加锁并发安全写入
 func (ws *WSClient) safeWriteJSON(v any) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.conn == nil {
 		return fmt.Errorf("websocket 连接未建立")
 	}
-	bytes, _ := json.Marshal(v)
-	slog.Debug("WSS 我方发送原始帧", "raw", string(bytes))
+	raw, _ := json.Marshal(v)
+	slog.Debug("WSS 我方发送原始帧", "raw", string(raw))
 
 	return ws.conn.WriteJSON(v)
 }
 
-// Start 启动长连接：鉴权订阅 -> 启动心跳协程 -> 消息监听循环
 func (ws *WSClient) Start(ctx context.Context) {
 	wsURL := "wss://openws.work.weixin.qq.com"
 
@@ -139,16 +134,13 @@ func (ws *WSClient) connectAndSubscribe(ctx context.Context, wsURL string) error
 	ws.conn = conn
 	defer ws.conn.Close()
 
-	// 1. 发起鉴权订阅
 	if err := ws.subscribe(); err != nil {
 		return fmt.Errorf("[ERROR] 企微 WSS 长连接鉴权失败: %w", err)
 	}
 	slog.Info("WSS 长连接鉴权成功，进入 24 小时消息监听状态...")
 
-	// 2. 后台启动 15s 定时 Ping 心跳保活协程
 	go ws.startHeartbeat(ctx)
 
-	// 3. 消息读取主循环
 	for {
 		_, rawBytes, err := ws.conn.ReadMessage()
 		if err != nil {
@@ -212,7 +204,6 @@ func (ws *WSClient) startHeartbeat(ctx context.Context) {
 }
 
 func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
-	// 只处理企微回调 (aibot_msg_callback)
 	if frame.Cmd != "aibot_msg_callback" || len(frame.Body) == 0 {
 		return
 	}
@@ -228,7 +219,6 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 
 	slog.InfoContext(ctx, "[WSS] 收到企微机器人消息", "userID", userID, "text", userText)
 
-	// 1. 构造统一通用记账输入
 	input := service.AccountingInput{
 		UserID:        userID,
 		SourceChannel: "wecom_wss",
@@ -237,7 +227,6 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 		UserText:      userText,
 	}
 
-	// 2. 一键调用核心业务服务 (AI 识别 ➔ 账本落盘 ➔ 生成小票)
 	replyData, err := ws.accountService.Process(ctx, input)
 	if err != nil {
 		slog.ErrorContext(ctx, "[WSS] 记账失败", "err", err)
@@ -248,13 +237,11 @@ func (ws *WSClient) handleFrame(ctx context.Context, frame WSFrame) {
 		return
 	}
 
-	// 3. 构造回复文本 (包含小票跳转链接)
 	replyText := replyData.SummaryHeadline()
 	if replyData.JumpURL != "" {
 		replyText += fmt.Sprintf("\n\n👉 点击查看电子小票: %s", replyData.JumpURL)
 	}
 
-	// 4. 回复消息
 	ws.respondMsg(frame.Headers.ReqID, msgBody.ResponseURL, notifier.Message{
 		Type:    notifier.TypeText,
 		Content: replyText,
