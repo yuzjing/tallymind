@@ -56,9 +56,18 @@ func (t *Transaction) EnsureDefaults(cfg Config, ctx RequestContext) {
 
 	needsReview := false
 
-	// 7. 科目检查与保底
-	if !isValidCategory(t.Category) || t.Category == "" {
-		slog.Debug("科目格式不合规，自动降级", "raw_category", t.Category, "fallback", cfg.FallbackCategory)
+	// ⭐️ 核心修复 1：区分普通消费与转账还款的科目合法性校验
+	isCatValid := false
+	if t.Type == "transfer" {
+		// 转账还款时，Category 应当是资金转入方的合法资产或负债账户 (如 Liabilities:CreditCard 或 Assets:Bank)
+		isCatValid = isValidAccount(t.Category)
+	} else {
+		// 普通消费/退款/开户，Category 必须是 Expenses, Income 或 Equity
+		isCatValid = isValidCategory(t.Category)
+	}
+
+	if !isCatValid || t.Category == "" {
+		slog.Debug("科目格式不合规，自动降级", "raw_category", t.Category, "fallback", cfg.FallbackCategory, "type", t.Type)
 		t.Category = cfg.FallbackCategory
 		needsReview = true
 	}
@@ -68,8 +77,11 @@ func (t *Transaction) EnsureDefaults(cfg Config, ctx RequestContext) {
 		t.Account = cfg.FallbackAccount
 	}
 
-	// ⭐️ 9. 核心注入：将资产/负债账户转换为流派 2 (Assets:zhaozhao:WeChat:Wallet)
+	// ⭐️ 核心修复 2：将出账账户注入人名；若为转账还款，入账方 Category 也注入人名
 	t.Account = formatAccountWithOwner(t.Account, t.Meta.Owner)
+	if t.Type == "transfer" {
+		t.Category = formatAccountWithOwner(t.Category, t.Meta.Owner)
+	}
 
 	// 10. 标记与标签处理
 	if needsReview && !slices.Contains(t.Tags, "#needs-review") {
@@ -91,8 +103,7 @@ func (b *BalanceAssertion) EnsureDefaults(cfg Config, ctx RequestContext) {
 	}
 	b.Currency = cmp.Or(b.Currency, cfg.DefaultCurrency, "CNY")
 	b.Owner = cmp.Or(b.Owner, ctx.UserID, cfg.DefaultReporter, "User")
-	
-	// ⭐️ 核心注入：断言账户同样转换为流派 2
+
 	b.Account = formatAccountWithOwner(b.Account, b.Owner)
 }
 
@@ -113,7 +124,7 @@ func isValidCategory(category string) bool {
 		strings.HasPrefix(category, "Equity:")
 }
 
-// isValidAccount 检查是否为合法的资金流转账户
+// isValidAccount 检查是否为合法的资金流转账户 (资产或负债)
 func isValidAccount(account string) bool {
 	return strings.HasPrefix(account, "Assets:") ||
 		strings.HasPrefix(account, "Liabilities:")

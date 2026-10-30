@@ -122,6 +122,13 @@ func (s *Scheduler) Trigger(ctx context.Context, period string) {
 			continue
 		}
 
+		slog.InfoContext(ctx, "🎯 匹配到推送目标",
+			"name", target.Name,
+			"channel", target.Channel,
+			"to_user", target.ToUser,
+			"scope", target.Scope,
+		)
+
 		scope := strings.TrimSpace(target.Scope)
 		reportData, err := s.accountingService.GetPeriodicReport(ctx, period, targetTime, "", "", scope)
 		if err != nil {

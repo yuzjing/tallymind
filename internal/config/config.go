@@ -101,11 +101,11 @@ type LLMConfig struct {
 
 // 推送目标
 type ReporterTarget struct {
-	Name    string   `json:"name"`    // 目标名称
-	Channel string   `json:"channel"` // 通道类型“webhook”/"app"
-	URL     string   `json:"url"`     // 目标 URL
-	ToUser  string   `json:"tu_user"` // 接收人 UserID，多人员用 | 分隔 (channel="app" 时必填)
-	Scope   string   `json:"scope"`   // 统计口径: "family" (全家大盘) 或具体成员如 "zhaozhao"
+	Name    string   `toml:"name"`    // 目标名称
+	Channel string   `toml:"channel"` // 通道类型“webhook”/"app"
+	URL     string   `toml:"url"`     // 目标 URL
+	ToUser  string   `toml:"to_user"` // 接收人 UserID，多人员用 | 分隔 (channel="app" 时必填)
+	Scope   string   `toml:"scope"`   // 统计口径: "family" (全家大盘) 或具体成员如 "zhaozhao"
 	Periods []string `toml:"periods"` // 订阅周期列表: ["weekly", "monthly"]
 }
 
