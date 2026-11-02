@@ -35,7 +35,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		isGenesis := false
 
 		for _, tx := range batch.Transactions {
-			// ⭐️ 核心修正：严格区分现金流向，退款和收入在当次结算中全部计入入账流
+			// 严格区分现金流向
 			switch tx.Type {
 			case "income":
 				incomeTotal += tx.Amount
@@ -58,6 +58,24 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 				displayCat = "期初建账"
 			}
 
+			// ⭐️ 核心解耦映射：将底层 ledger.Posting 投影为纯净的 reporter.PostingItem
+			var postingItems []PostingItem
+			if len(tx.Postings) > 0 {
+				postingItems = make([]PostingItem, 0, len(tx.Postings))
+				for _, p := range tx.Postings {
+					postingItems = append(postingItems, PostingItem{
+						Account:  p.Account,
+						Amount:   p.Amount,
+						Currency: cmp.Or(p.Currency, tx.Currency, "CNY"),
+					})
+				}
+			}
+
+			linkID := ""
+			if tx.Meta != nil {
+				linkID = tx.Meta.Link
+			}
+
 			items = append(items, TransactionItem{
 				Type:            tx.Type,
 				Date:            tx.Date,
@@ -73,8 +91,9 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 				Owner:           cmp.Or(tx.Meta.Owner, "User"),
 				Beneficiary:     tx.Meta.Beneficiary,
 				SourceChannel:   tx.Meta.SourceChannel,
-				Link:            tx.Meta.Link,
+				Link:            linkID,
 				Tags:            tx.Tags,
+				Postings:        postingItems, // ⭐️ 注入解耦后的切片，小票直接读取
 			})
 		}
 
@@ -83,7 +102,6 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			primaryCategory = "期初建账"
 		}
 
-		// 主金额判定：纯入账显示总入账，纯支出显示总支出，混合时显示净额
 		var totalAmount float64
 		if hasIncome && !hasExpense {
 			totalAmount = incomeTotal

@@ -1,6 +1,13 @@
 // internal/reporter/types.go
 package reporter
 
+// PostingItem ⭐️ 视图层专用分录项 (纯净 ViewModel，彻底杜绝跨包循环依赖)
+type PostingItem struct {
+	Account  string  `json:"account"`            // 账户/科目全名 (供小票展示)
+	Amount   float64 `json:"amount"`             // 金额 (正数为借方增加，负数为贷方减少)
+	Currency string  `json:"currency,omitempty"` // 币种
+}
+
 // TransactionItem 单笔交易明细视图
 type TransactionItem struct {
 	Date            string   `json:"date"`
@@ -19,6 +26,9 @@ type TransactionItem struct {
 	SourceChannel   string   `json:"source_channel,omitempty"` // 渠道来源 (如 wecom_plugin)
 	Link            string   `json:"link,omitempty"`           // 消息溯源 (^msg-xxxx)
 	Tags            []string `json:"tags,omitempty"`           // 特征标签列表
+
+	// ⭐️ 核心新增：纯净视图层分录切片 (小票展示组合支付与拆单清单)
+	Postings []PostingItem `json:"postings,omitempty"`
 }
 
 // ReplyData 即时记账回执视图模型

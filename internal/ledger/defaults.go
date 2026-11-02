@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"fmt"
 	"log/slog"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -56,31 +57,60 @@ func (t *Transaction) EnsureDefaults(cfg Config, ctx RequestContext) {
 
 	needsReview := false
 
-	// ⭐️ 核心修复 1：区分普通消费与转账还款的科目合法性校验
-	isCatValid := false
-	if t.Type == "transfer" {
-		// 转账还款时，Category 应当是资金转入方的合法资产或负债账户 (如 Liabilities:CreditCard 或 Assets:Bank)
-		isCatValid = isValidAccount(t.Category)
+	// ⭐️ 核心改进 1：支持多分录模式 (postings 优先)
+	if len(t.Postings) > 0 {
+		var totalExpenseSum float64
+		var primaryCat string
+
+		for i := range t.Postings {
+			p := &t.Postings[i]
+			p.Currency = cmp.Or(p.Currency, t.Currency)
+			// 自动对 Assets/Liabilities 注入人名命名空间 (如 Assets:Zhaozhao:WeChat:Wallet)
+			p.Account = formatAccountWithOwner(p.Account, t.Meta.Owner)
+
+			// 自动提取主支出金额与第一主类目，为外层卡片及小票提供展示支撑
+			if strings.HasPrefix(p.Account, "Expenses:") && p.Amount > 0 {
+				totalExpenseSum += p.Amount
+				if primaryCat == "" {
+					primaryCat = p.Account
+				}
+			}
+		}
+
+		if t.Amount == 0 {
+			t.Amount = math.Abs(totalExpenseSum)
+		}
+		if t.Category == "" && primaryCat != "" {
+			t.Category = primaryCat
+		}
+
 	} else {
-		// 普通消费/退款/开户，Category 必须是 Expenses, Income 或 Equity
-		isCatValid = isValidCategory(t.Category)
-	}
+		// ⭐️ 核心改进 2：单分录传统模式 (区分消费与转账还款的合法性校验)
+		isCatValid := false
+		if t.Type == "transfer" {
+			// 转账还款时，Category 应当是资金转入方的合法资产或负债账户 (如 Liabilities:CreditCard 或 Assets:Bank)
+			isCatValid = isValidAccount(t.Category)
+		} else {
+			// 普通消费/退款/开户，Category 必须是 Expenses, Income 或 Equity
+			isCatValid = isValidCategory(t.Category)
+		}
 
-	if !isCatValid || t.Category == "" {
-		slog.Debug("科目格式不合规，自动降级", "raw_category", t.Category, "fallback", cfg.FallbackCategory, "type", t.Type)
-		t.Category = cfg.FallbackCategory
-		needsReview = true
-	}
+		if !isCatValid || t.Category == "" {
+			slog.Debug("科目格式不合规，自动降级", "raw_category", t.Category, "fallback", cfg.FallbackCategory, "type", t.Type)
+			t.Category = cfg.FallbackCategory
+			needsReview = true
+		}
 
-	// 8. 账户检查与保底
-	if !isValidAccount(t.Account) || t.Account == "" {
-		t.Account = cfg.FallbackAccount
-	}
+		// 8. 账户检查与保底
+		if !isValidAccount(t.Account) || t.Account == "" {
+			t.Account = cfg.FallbackAccount
+		}
 
-	// ⭐️ 核心修复 2：将出账账户注入人名；若为转账还款，入账方 Category 也注入人名
-	t.Account = formatAccountWithOwner(t.Account, t.Meta.Owner)
-	if t.Type == "transfer" {
-		t.Category = formatAccountWithOwner(t.Category, t.Meta.Owner)
+		// 9. 将出账账户注入人名；若为转账还款，入账方 Category 也注入人名
+		t.Account = formatAccountWithOwner(t.Account, t.Meta.Owner)
+		if t.Type == "transfer" {
+			t.Category = formatAccountWithOwner(t.Category, t.Meta.Owner)
+		}
 	}
 
 	// 10. 标记与标签处理

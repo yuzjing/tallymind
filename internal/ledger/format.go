@@ -75,7 +75,18 @@ func (t *Transaction) ToBeancountFormat() string {
 		}
 	}
 
-	// ⭐️ 核心改进 1：统一在格式化层进行 4 层命名空间注入（Account 与 转账 Category 双重保护）
+	// ⭐️ 核心改进：优先检查多分录 (Postings 模式)
+	if len(t.Postings) > 0 {
+		for _, p := range t.Postings {
+			acc := formatAccountWithOwner(p.Account, owner)
+			curr := cmp.Or(p.Currency, t.Currency, "CNY")
+			fmt.Fprintf(&builder, "  %-32s  %8.2f %s\n", acc, p.Amount, curr)
+		}
+		builder.WriteString("\n")
+		return builder.String()
+	}
+
+	// ⭐️ 传统双分录模式 (向后兼容保底)
 	categoryAccount := formatAccountWithOwner(t.Category, owner)
 	targetAccount := formatAccountWithOwner(t.Account, owner)
 
@@ -97,8 +108,6 @@ func (t *Transaction) ToBeancountFormat() string {
 		categoryAmount = -absAmount
 		accountAmount = absAmount
 	}
-	// 注：当 t.Type == "transfer" (内部转账/还信用卡) 时，走默认分支：
-	// categoryAmount = +absAmount (转入方增加), accountAmount = -absAmount (转出方扣减)，符号完全精确！
 
 	fmt.Fprintf(&builder, "  %-32s  %8.2f %s\n  %-32s  %8.2f %s\n\n",
 		categoryAccount, categoryAmount, t.Currency,

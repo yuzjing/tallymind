@@ -32,7 +32,7 @@ type Metadata struct {
 	Link           string            `json:"link,omitempty"`            // 关联单号 (写为 ^msg-12345)
 	Time           string            `json:"time,omitempty"`            // 交易时间
 	Location       string            `json:"location,omitempty"`        // 地点
-	Beneficiary    string            `json:"beneficiary,omitempty"`     // 受益人 (如 runrun / parents)
+	Beneficiary    string            `json:"beneficiary,omitempty"`     // 受益人 (如 runrun / parents / family)
 	InvoiceStatus  string            `json:"invoice_status,omitempty"`  // 发票状态
 	SourceChannel  string            `json:"source_channel,omitempty"`  // 渠道
 	OriginalAmount string            `json:"original_amount,omitempty"` // 优惠前原价
@@ -40,9 +40,16 @@ type Metadata struct {
 	Extra          map[string]string `json:"extra,omitempty"`           // 动态扩展字典
 }
 
+// Posting 复式记账原生单条分录 (多分录基础模型)
+type Posting struct {
+	Account  string  `json:"account"`            // 账户或科目全名 (如 Expenses:Shopping:Electronics 或 Assets:WeChat:Wallet)
+	Amount   float64 `json:"amount"`             // 金额 (遵循借贷正负代数规则)
+	Currency string  `json:"currency,omitempty"` // 币种 (留空则继承交易币种)
+}
+
 // Transaction 核心交易结构体
 type Transaction struct {
-	Amount    float64   `json:"amount" validate:"required,gt=0"`
+	Amount    float64   `json:"amount" validate:"omitempty,gt=0"` // 微调为 omitempty，兼容由 postings 自动推导总额
 	Date      string    `json:"date" validate:"omitempty,datetime=2006-01-02"`
 	Payee     string    `json:"payee" validate:"omitempty,max=500"`
 	Narration string    `json:"narration" validate:"omitempty,max=1000"`
@@ -53,6 +60,9 @@ type Transaction struct {
 	Tags      []string  `json:"tags,omitempty"`
 	Meta      *Metadata `json:"metadata,omitempty"`
 	Flag      string    `json:"flag,omitempty"`
+
+	// 新增：多分录支持 (组合支付、超市购物车拆单、定金尾款对冲)
+	Postings []Posting `json:"postings,omitempty"`
 }
 
 // BalanceAssertion 资产断言与自动平账实体
