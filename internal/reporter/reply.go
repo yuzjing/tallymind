@@ -9,7 +9,7 @@ import (
 	"tallymind/internal/ledger"
 )
 
-// 统一图标定义 (语义完全独立覆盖)
+// 统一图标定义
 const (
 	IconGemini   = "✨"  // 默认/消费成功
 	IconIncome   = "🎉"  // 收入入账
@@ -36,7 +36,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		isGenesis := false
 
 		for _, tx := range batch.Transactions {
-			// ⭐️ 核心修正 1：精确分离现金流向 (转账/还款/垫付不污染消费与收入统计)
+			// ⭐️ 核心修正 1：严格区分现金流向 (转账/还款/垫付不污染消费与收入统计)
 			switch tx.Type {
 			case "income":
 				incomeTotal += tx.Amount
@@ -64,6 +64,8 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			} else if tx.Type == "transfer" {
 				if strings.Contains(tx.Category, "Receivables:Company") {
 					displayCat = "因公垫付 > 待报销"
+				} else if strings.Contains(tx.Category, "Receivables:Family") {
+					displayCat = "亲友垫付 > 待结清"
 				} else if strings.Contains(tx.Category, "Receivables:Friends") {
 					displayCat = "亲友往来 > 待收款"
 				} else if strings.Contains(tx.Category, "Prepaid:Deposit") {
@@ -128,7 +130,6 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			primaryCategory = "期初建账"
 		}
 
-		// 判定回执卡片总金额展示
 		var totalAmount float64
 		if hasIncome && !hasExpense {
 			totalAmount = incomeTotal
@@ -137,7 +138,6 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		} else if hasExpense && hasIncome {
 			totalAmount = expenseTotal - incomeTotal
 		} else {
-			// 纯转账/还款批次
 			totalAmount = items[0].Amount
 		}
 
@@ -200,7 +200,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 	return ReplyData{}
 }
 
-// SummaryHeadline 极简单行摘要 (供日志、通知、纯文本推送使用)
+// SummaryHeadline 极简单行摘要
 func (r ReplyData) SummaryHeadline() string {
 	// 1. 资产场景
 	if r.PrimaryCategory == "期初建账" {
@@ -233,7 +233,6 @@ func (r ReplyData) SummaryHeadline() string {
 			}
 		}
 
-		// 多笔混合流水
 		if r.HasExpense && r.HasIncome {
 			return fmt.Sprintf("%s 记账成功：共 %d 笔（支出 ￥%.2f，入账 +￥%.2f）",
 				IconGemini, r.Count, r.ExpenseTotal, r.IncomeTotal)

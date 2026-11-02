@@ -33,7 +33,6 @@ type rawTxRecord struct {
 }
 
 // scanAndAggregatePeriod 扫描并聚合指定时间区间的全量财务流水
-// ⭐️ 新增 targetMember 参数：为空或 "family" 代表全家；否则仅统计该成员
 func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYearly bool, targetMember string) (*PeriodicReportData, error) {
 	var records []rawTxRecord
 	var totalExpense, totalIncome float64
@@ -113,16 +112,14 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 					account := pMatches[1]
 					amt, _ := strconv.ParseFloat(pMatches[2], 64)
 
-					// ⭐️ 核心判定：成员隔离过滤
-					// 若指定了个人口径，检查：出资人、受益人或结算账户是否属于该成员
+					// 成员隔离过滤
 					if !isFamilyScope {
 						own := strings.ToLower(currentTx.Owner)
 						ben := strings.ToLower(currentTx.Beneficiary)
 						acc := strings.ToLower(account)
-						// 只要 owner、beneficiary 匹配，或者账户命名空间包含该成员（如 Assets:Zhaozhao）
 						matchMember := (own == targetMember) || (ben == targetMember) || strings.Contains(acc, ":"+targetMember+":")
 						if !matchMember {
-							continue // 非本人口径直接跳过
+							continue
 						}
 					}
 
@@ -164,7 +161,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		_ = file.Close()
 	}
 
-	// 汇总排序等逻辑保持原样...
 	categoryStats := make([]CategoryStat, 0, len(categoryMap))
 	for cat, sum := range categoryMap {
 		if sum <= 0 {
@@ -254,9 +250,12 @@ func formatCategory(fullCategory string, maxDepth int) string {
 		return "未分类"
 	}
 
-	// ⭐️ 核心美化：债权、借款与定金资产展示为人性化业务语义
+	// ⭐️ 核心美化：债权、垫付与预付资产转化为高可读业务语义
 	if strings.Contains(fullCategory, "Receivables:Company") {
 		return "因公垫付 > 待报销"
+	}
+	if strings.Contains(fullCategory, "Receivables:Family") {
+		return "亲友垫付 > 待结清"
 	}
 	if strings.Contains(fullCategory, "Receivables:Friends") {
 		return "亲友往来 > 待收款"
@@ -276,9 +275,8 @@ func formatCategory(fullCategory string, maxDepth int) string {
 
 	parts := strings.Split(trimmed, ":")
 
-	// ⭐️ 如果是非支出账户 (如 Assets:Zhaozhao:Bank:BOC)，第一段通常是人名，予以跳过
 	if len(parts) >= 3 && (strings.HasPrefix(fullCategory, "Assets:") || strings.HasPrefix(fullCategory, "Liabilities:")) {
-		parts = parts[1:] // 跳过 Zhaozhao，保留 Bank:BOC
+		parts = parts[1:]
 	}
 
 	if maxDepth > 0 && len(parts) > maxDepth {
