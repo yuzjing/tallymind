@@ -248,10 +248,24 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	}, nil
 }
 
+// formatCategory 剥离会计根前缀，并按指定最大层级深度 depth 截断格式化
 func formatCategory(fullCategory string, maxDepth int) string {
 	if fullCategory == "" {
 		return "未分类"
 	}
+
+	// ⭐️ 核心美化：债权、借款与定金资产展示为人性化业务语义
+	if strings.Contains(fullCategory, "Receivables:Company") {
+		return "因公垫付 > 待报销"
+	}
+	if strings.Contains(fullCategory, "Receivables:Friends") {
+		return "亲友往来 > 待收款"
+	}
+	if strings.Contains(fullCategory, "Prepaid:Deposit") {
+		return "预售定金 > 待核销"
+	}
+
+	// 1. 剥离 Expenses:/Income:/Liabilities:/Assets:/Equity: 根前缀
 	trimmed := fullCategory
 	for _, prefix := range []string{"Expenses:", "Income:", "Liabilities:", "Assets:", "Equity:"} {
 		if after, ok := strings.CutPrefix(trimmed, prefix); ok {
@@ -259,7 +273,14 @@ func formatCategory(fullCategory string, maxDepth int) string {
 			break
 		}
 	}
+
 	parts := strings.Split(trimmed, ":")
+
+	// ⭐️ 如果是非支出账户 (如 Assets:Zhaozhao:Bank:BOC)，第一段通常是人名，予以跳过
+	if len(parts) >= 3 && (strings.HasPrefix(fullCategory, "Assets:") || strings.HasPrefix(fullCategory, "Liabilities:")) {
+		parts = parts[1:] // 跳过 Zhaozhao，保留 Bank:BOC
+	}
+
 	if maxDepth > 0 && len(parts) > maxDepth {
 		parts = parts[:maxDepth]
 	}

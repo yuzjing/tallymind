@@ -22,6 +22,7 @@
             --secondary-text: #334155;
             --orange: #ea580c;
             --green: #10b981;
+            --blue: #0284c7;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -111,8 +112,10 @@
             font-size: 18px;
             font-weight: 700;
         }
+        /* 金额色彩按业务流向自适应 */
         .tx-amount.expense { color: var(--orange); }
         .tx-amount.refund, .tx-amount.income { color: var(--green); }
+        .tx-amount.transfer { color: var(--blue); }
 
         .tx-meta {
             display: grid;
@@ -137,8 +140,12 @@
             font-weight: 500;
             margin-left: 4px;
         }
+        .tx-tag.transfer-tag {
+            background: #f1f5f9;
+            color: #475569;
+        }
 
-        /* ⭐️ 核心新增：多分录结算明细展开区 */
+        /* 多分录借贷明细展开区 */
         .postings-box {
             margin-top: 10px;
             padding: 8px 10px;
@@ -284,19 +291,31 @@
             <div class="tx-card">
                 <div class="tx-top">
                     <div class="tx-payee">{{ .DisplayName }}</div>
-                    <!-- 退款与收入显示绿色 + 号，消费显示橙色 -->
+                    <!-- 退款与收入显示绿色 + 号，消费显示橙色，划转显示蓝色 -->
                     <div class="tx-amount {{ .Type }}">
                         {{ if eq .Type "refund" }}+{{ else if eq .Type "income" }}+{{ end }}￥{{ printf "%.2f" .Amount }} {{ .Currency }}
                     </div>
                 </div>
 
                 <div class="tx-meta">
+                    <!-- ⭐️ 核心动态切换：按业务真实属性自适应展示分类、来源、业务或退回标签 -->
                     <div class="tx-meta-item">
-                        <span>🏷️ 分类:</span>
-                        <span class="tx-tag">{{ .DisplayCategory }}</span>
+                        {{ if eq .Type "transfer" }}
+                            <span>🔄 业务:</span>
+                            <span class="tx-tag transfer-tag">{{ .DisplayCategory }}</span>
+                        {{ else if eq .Type "refund" }}
+                            <span>↩️ 退回:</span>
+                            <span class="tx-tag">{{ .DisplayCategory }}</span>
+                        {{ else if eq .Type "income" }}
+                            <span>💰 来源:</span>
+                            <span class="tx-tag">{{ .DisplayCategory }}</span>
+                        {{ else }}
+                            <span>🏷️ 分类:</span>
+                            <span class="tx-tag">{{ .DisplayCategory }}</span>
+                        {{ end }}
                     </div>
 
-                    <!-- ⭐️ 核心自适应：仅当单分录且有 Account 时显示单账户；多分录时隐藏此行，改走下方结算清单 -->
+                    <!-- ⭐️ 核心自适应：仅当单分录且有 Account 时显示单账户；多分录时隐藏此行，展示下方借贷明细 -->
                     {{ if and (not .Postings) .Account }}
                     <div class="tx-meta-item">
                         <span>💳 账户:</span>
@@ -326,7 +345,7 @@
                     {{ end }}
                 </div>
 
-                <!-- ⭐️ 核心新增：多分录组合支付/拆单详细清单 (如同官方电子凭证) -->
+                <!-- ⭐️ 多分录组合支付/拆单详细清单 (如官方电子发票底单) -->
                 {{ if .Postings }}
                 <div class="postings-box">
                     <div class="postings-header">
@@ -344,7 +363,7 @@
                 </div>
                 {{ end }}
 
-                <!-- 标签列表 -->
+                <!-- 标签列表 (后端已清洗 #，模板标准输出单个 #) -->
                 {{ if .Tags }}
                 <div class="tx-tags-container">
                     {{ range .Tags }}
