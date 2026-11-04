@@ -148,7 +148,10 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		} else if hasExpense && hasIncome {
 			totalAmount = expenseTotal - incomeTotal
 		} else {
-			totalAmount = items[0].Amount
+			// 纯内部转账/垫付/还款批次，累加全部资金调度总规模
+			for _, item := range items {
+				totalAmount += item.Amount
+			}
 		}
 
 		return ReplyData{
