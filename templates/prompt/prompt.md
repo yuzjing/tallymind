@@ -53,7 +53,7 @@
 6. `tags`: 字符串数组，如包含垫付待报销打上 `["#reimbursement"]`，无特征设为 []。
 7. **`metadata` (凭据与家庭协作元数据提取)**:
    - `owner`: 实际出资人 (优先归一化为当前记账人；未提及设为 "")。
-   - `beneficiary`: 实际受益人 (遵循下方第 8 条原则；日常自用、转账互转或回款结清时设为 "")。
+   - `beneficiary`: 实际受益人 (遵循下方第 8 条原则；自用、转账互转或回款结清时设为 "")。
    - `invoice_status`: 发票凭据识别为 `"done"`；需开票/待报销/待回款识别为 `"pending"`；无需求设为 `""`。
    - `original_amount`, `discount_amount`, `time`, `location`, `link` (无则设为 "")。
 
@@ -69,17 +69,17 @@
      • `account`: 自己的付款卡/钱包 (系统将记为扣款 `-`)
      • `category`: 对应的债权账户 (如 `Assets:Receivables:Company`, `Assets:Receivables:Family`, `Assets:Receivables:Friends`)
      • 标签打上 `["#reimbursement"]`
-   - **回程：报销到账 / 亲友还款 (钱打回自己卡里结清销账)**：
+   - **回程：全额报销到账 / 亲友全额还款 (钱打回自己卡里结清销账)**：
      • `type`: **必须填 `"reimburse"`** (触发系统自动记正向进账)
      • `account`: 自己的收款卡/钱包 (系统自动记为资金增加 `+`)
-     • `category`: 待结清销账的债权账户 (如 `Assets:Receivables:Company`, `Assets:Receivables:Family`, `Assets:Receivables:Friends`，系统自动记为负数冲平销账)
+     • `category`: 待结清销账的债权账户 (系统自动记为负数冲平销账)
      • 标签打上 `["#reimbursement"]`
-     • **严禁将回程的 account 和 category 填反，确保 account 永远是进钱的钱包/卡！**
-   - **⭐️ 结清时就地抹平差额原则**：
-     • 若回款金额有零头差额且明确自理（如“岳母还款320结清，零头3.51算我自己付了”），必须激活 `postings` 多分录数组就地做平，代数和为 0：
-       1. 微信钱包收款: `+320.00`
+     • **确保 account 永远是进钱的钱包/卡！**
+   - **⭐️ 结清时就地抹平差额原则 (零头自理)**：
+     • 若回款金额有零头差额且明确自理（如“岳母还款320结清，零头3.51算我自己付了”），必须激活 `postings` 多分录数组就地做平，代数和严格为 0：
+       1. 钱包/银行卡收款增加: `+320.00`
        2. 差额确认为个人真实消费: `+3.51` (如 Expenses:Housing:Appliances)
-       3. 原代垫债权全额平仓销账: `-323.51` (Assets:Receivables:Family)
+       3. 原挂账代垫债权全额平仓: `-323.51` (Assets:Receivables:Family)
 
 10. **⭐️ 综合电商平台“去偏见”分类铁律**：按具体物品本身属性分类，严禁仅因“京东”无脑归为数码电子；无法推断商品内容时，兜底归入日用 `Expenses:Housing:Daily`。
 
@@ -88,8 +88,8 @@
 12. **⭐️ 付定金与预售处理**：支付定金时资金转入 `category: "Assets:Prepaid:Deposit"`, `type: "transfer"`, 不计入当期消费支出。
 
 13. **⭐️ 退款与补偿双轨制（实体退货退费必须原路冲减原科目）**：
-    - **实体商品退货或服务培训退费**（如“退电视支架”、“保密培训退费”）：**必须填写原支出的科目原路冲减**（`type: "refund"`, `category` 填原科目如 `Expenses:Edu:Exam` 或 `Expenses:Housing:Appliances`），严禁记入 Income:Refund（避免当期收支双双虚增）！
-    - **无实物平台的补偿返现**（价保、红包、服务费补偿）：归入进账（`type: "income"`, `category: "Income:Refund"` 或 `Income:Other"`）。
+    - **实体商品退货或服务培训退费**（如“退电视支架”、“退衣服”）：必须填写原支出的科目原路冲减（`type: "refund"`, `category` 填原支出科目），严禁记入 Income:Refund（避免当期收支双双虚增）！
+    - **无实物平台的补偿返现**（价保退款、红包返现、服务费补偿）：归入进账（`type: "income"`, `category: "Income:Refund"` 或 `Income:Other"`）。
 
 14. **⭐️ 复合输入账户继承**：一句话记录多笔流水时，后续分句若未指明新渠道，强制继承前文账户。
 
@@ -110,64 +110,20 @@
 ---
 
 ### 【输出 JSON 格式要求】
-只输出合法 JSON 对象，不含 Markdown 标记（如 ```json）或多余废话。
+只输出合法 JSON 对象，不含 Markdown 标记（如 ```json）或多余废话。以下展示 6 大基础模板原型：
 
 ```json
 {
   "transactions": [
     {
-      "amount": 320.00,
+      "amount": 25.00,
       "currency": "CNY",
       "date": "{{ .Today }}",
-      "payee": "岳母",
-      "narration": "监控摄像头费用报销到账 (亲属垫付结清)",
-      "category": "Assets:Receivables:Family",
+      "payee": "肯德基",
+      "narration": "工作午餐",
+      "category": "Expenses:Food:Lunch",
       "account": "Assets:WeChat:Wallet",
-      "type": "reimburse",
-      "tags": ["#reimbursement"],
-      "metadata": {
-        "owner": "zhaozhao",
-        "beneficiary": "",
-        "invoice_status": "done",
-        "original_amount": "",
-        "discount_amount": "",
-        "time": "10:44:00",
-        "location": "",
-        "link": ""
-      },
-      "postings": []
-    },
-    {
-      "amount": 18850.13,
-      "currency": "CNY",
-      "date": "{{ .Today }}",
-      "payee": "中央空调",
-      "narration": "给妹妹买中央空调垫付代买",
-      "category": "Assets:Receivables:Family",
-      "account": "Liabilities:CreditCard:CZCB",
-      "type": "transfer",
-      "tags": ["#reimbursement"],
-      "metadata": {
-        "owner": "zhaozhao",
-        "beneficiary": "sister",
-        "invoice_status": "pending",
-        "original_amount": "",
-        "discount_amount": "",
-        "time": "16:30:00",
-        "location": "",
-        "link": ""
-      },
-      "postings": []
-    },
-    {
-      "amount": 2000.00,
-      "currency": "CNY",
-      "date": "{{ .Today }}",
-      "payee": "保密培训",
-      "narration": "保密培训退费原路退回",
-      "category": "Expenses:Edu:Exam",
-      "account": "Liabilities:CreditCard:CZCB",
-      "type": "refund",
+      "type": "expense",
       "tags": [],
       "metadata": {
         "owner": "zhaozhao",
@@ -175,7 +131,95 @@
         "invoice_status": "",
         "original_amount": "",
         "discount_amount": "",
+        "time": "12:15:00",
+        "location": "",
+        "link": ""
+      },
+      "postings": []
+    },
+    {
+      "amount": 15000.00,
+      "currency": "CNY",
+      "date": "{{ .Today }}",
+      "payee": "公司财务",
+      "narration": "10月份税后工资入账",
+      "category": "Income:Salary",
+      "account": "Assets:Bank:CMB",
+      "type": "income",
+      "tags": [],
+      "metadata": {
+        "owner": "zhaozhao",
+        "beneficiary": "",
+        "invoice_status": "",
+        "original_amount": "",
+        "discount_amount": "",
+        "time": "10:00:00",
+        "location": "",
+        "link": ""
+      },
+      "postings": []
+    },
+    {
+      "amount": 356.03,
+      "currency": "CNY",
+      "date": "{{ .Today }}",
+      "payee": "京东",
+      "narration": "电视支架退货退款 (原路冲减原支出)",
+      "category": "Expenses:Housing:Appliances",
+      "account": "Assets:JD:Wallet",
+      "type": "refund",
+      "tags": [],
+      "metadata": {
+        "owner": "zhaozhao",
+        "beneficiary": "family",
+        "invoice_status": "",
+        "original_amount": "",
+        "discount_amount": "",
         "time": "15:20:00",
+        "location": "",
+        "link": "2026101100987654"
+      },
+      "postings": []
+    },
+    {
+      "amount": 1000.00,
+      "currency": "CNY",
+      "date": "{{ .Today }}",
+      "payee": "信用卡还款",
+      "narration": "中行还款浙商信用卡",
+      "category": "Liabilities:CreditCard:CZCB",
+      "account": "Assets:Bank:BOC",
+      "type": "transfer",
+      "tags": [],
+      "metadata": {
+        "owner": "zhaozhao",
+        "beneficiary": "",
+        "invoice_status": "",
+        "original_amount": "",
+        "discount_amount": "",
+        "time": "09:12:00",
+        "location": "",
+        "link": ""
+      },
+      "postings": []
+    },
+    {
+      "amount": 85.00,
+      "currency": "CNY",
+      "date": "{{ .Today }}",
+      "payee": "滴滴出行",
+      "narration": "出差拜访客户打车 (因公垫付待报销)",
+      "category": "Assets:Receivables:Company",
+      "account": "Assets:WeChat:Wallet",
+      "type": "transfer",
+      "tags": ["#reimbursement"],
+      "metadata": {
+        "owner": "zhaozhao",
+        "beneficiary": "zhaozhao",
+        "invoice_status": "pending",
+        "original_amount": "",
+        "discount_amount": "",
+        "time": "14:20:00",
         "location": "",
         "link": ""
       },
@@ -197,7 +241,7 @@
         "invoice_status": "",
         "original_amount": "",
         "discount_amount": "",
-        "time": "",
+        "time": "14:30:00",
         "location": "",
         "link": ""
       },
