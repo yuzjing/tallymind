@@ -32,7 +32,6 @@ type rawTxRecord struct {
 	Beneficiary string
 }
 
-// scanAndAggregatePeriod 扫描并聚合指定时间区间的全量财务流水
 func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYearly bool, targetMember string) (*PeriodicReportData, error) {
 	var records []rawTxRecord
 	var totalExpense, totalIncome float64
@@ -69,7 +68,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 		for scanner.Scan() {
 			line := scanner.Text()
 
-			// 1. 匹配交易主行
 			if matches := txHeaderRegex.FindStringSubmatch(line); len(matches) > 0 {
 				flushTx()
 				txDate, _ := time.ParseInLocation("2006-01-02", matches[1], startDate.Location())
@@ -96,7 +94,6 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 			}
 
 			if currentTx != nil {
-				// 2. 匹配元数据行
 				if mMatches := metaRegex.FindStringSubmatch(line); len(mMatches) > 0 {
 					switch mMatches[1] {
 					case "owner":
@@ -107,12 +104,10 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 					continue
 				}
 
-				// 3. 匹配账户分录行
 				if pMatches := postingRegex.FindStringSubmatch(line); len(pMatches) > 0 {
 					account := pMatches[1]
 					amt, _ := strconv.ParseFloat(pMatches[2], 64)
 
-					// 成员隔离过滤
 					if !isFamilyScope {
 						own := strings.ToLower(currentTx.Owner)
 						ben := strings.ToLower(currentTx.Beneficiary)
@@ -123,7 +118,7 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 						}
 					}
 
-					// 支出统计
+					// 支出统计 (负数自动冲减原科目)
 					if strings.HasPrefix(account, "Expenses:") {
 						currentTx.Category = account
 						currentTx.Amount += amt
@@ -201,7 +196,7 @@ func scanAndAggregatePeriod(basePath string, startDate, endDate time.Time, isYea
 	})
 
 	sort.Slice(records, func(i, j int) bool {
-		return records[i].Amount > records[j].Amount
+		return records[i].Amount > records[i].Amount
 	})
 	topCount := 5
 	if len(records) < 5 {
@@ -275,6 +270,7 @@ func formatCategory(fullCategory string, maxDepth int) string {
 
 	parts := strings.Split(trimmed, ":")
 
+	// ⭐️ 若为资产/负债转账科目 (如 Assets:Zhaozhao:Bank:BOC)，跳过人名命名空间避免暴露 Zhaozhao > Bank
 	if len(parts) >= 3 && (strings.HasPrefix(fullCategory, "Assets:") || strings.HasPrefix(fullCategory, "Liabilities:")) {
 		parts = parts[1:]
 	}

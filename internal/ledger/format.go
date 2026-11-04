@@ -75,7 +75,7 @@ func (t *Transaction) ToBeancountFormat() string {
 		}
 	}
 
-	// ⭐️ 核心改进：优先检查多分录 (Postings 模式)
+	// ⭐️ 核心改进 1：优先检查多分录 (Postings 模式)
 	if len(t.Postings) > 0 {
 		for _, p := range t.Postings {
 			acc := formatAccountWithOwner(p.Account, owner)
@@ -104,7 +104,9 @@ func (t *Transaction) ToBeancountFormat() string {
 			categoryAmount = -absAmount
 			accountAmount = absAmount
 		}
-	} else if t.Type == "refund" || t.Type == "income" {
+		// ⭐️ 核心修正：加入 t.Type == "reimburse"！
+		// 报销回款时，收款账户 account 为 + 正数（微信到账），冲平的债权 category 为 - 负数（销账）！
+	} else if t.Type == "refund" || t.Type == "income" || t.Type == "reimburse" {
 		categoryAmount = -absAmount
 		accountAmount = absAmount
 	}

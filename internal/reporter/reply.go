@@ -11,11 +11,11 @@ import (
 
 // 统一图标定义
 const (
-	IconGemini   = "✨"  // 默认/消费成功
-	IconIncome   = "🎉"  // 收入入账
-	IconRefund   = "↩️" // 退款冲减
-	IconTransfer = "🔄"  // 资金划转/还款/垫付
-	IconBullet   = "✦"  // 列表条目装饰
+	IconGemini   = "✨"
+	IconIncome   = "🎉"
+	IconRefund   = "↩️"
+	IconTransfer = "🔄"
+	IconBullet   = "✦"
 )
 
 // BuildReplyData 纯函数：提炼领域实体为纯净展示视图模型 (零循环依赖)
@@ -36,16 +36,13 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 		isGenesis := false
 
 		for _, tx := range batch.Transactions {
-			// ⭐️ 核心修正 1：严格区分现金流向 (转账/还款/垫付不污染消费与收入统计)
+			// ⭐️ 核心修正 1：严格区分现金流向 (reimburse 回款计入流入，transfer 资金互转不污染消费统计)
 			switch tx.Type {
-			case "income":
-				incomeTotal += tx.Amount
-				hasIncome = true
-			case "refund":
+			case "income", "refund", "reimburse":
 				incomeTotal += tx.Amount
 				hasIncome = true
 			case "transfer":
-				// 资金平移或债权代垫，不计入日常消费损益
+				// 纯内部互转或垫出，不计入日常消费损益
 			default: // "expense"
 				expenseTotal += tx.Amount
 				hasExpense = true
@@ -56,11 +53,23 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			}
 
 			displayName := cmp.Or(tx.Payee, tx.Narration, "日常交易")
-
-			// ⭐️ 核心修正 2：业务分类人性化映射 (解决 Zhaozhao > Receivables 的生硬别扭感)
 			displayCat := formatCategory(tx.Category, 2)
+
 			if isGenesis {
 				displayCat = "期初建账"
+				// ⭐️ 核心修正 2：回款结清 (reimburse) 与垫付 (transfer) 的清晰中文标签映射
+			} else if tx.Type == "reimburse" {
+				if strings.Contains(tx.Category, "Receivables:Company") {
+					displayCat = "因公报销 > 已到账"
+				} else if strings.Contains(tx.Category, "Receivables:Family") {
+					displayCat = "亲友回款 > 已结清"
+				} else if strings.Contains(tx.Category, "Receivables:Friends") {
+					displayCat = "亲友还款 > 已到账"
+				} else if strings.Contains(tx.Category, "Prepaid:Deposit") {
+					displayCat = "定金退回 > 已到账"
+				} else {
+					displayCat = "往来回款 > 已结清"
+				}
 			} else if tx.Type == "transfer" {
 				if strings.Contains(tx.Category, "Receivables:Company") {
 					displayCat = "因公垫付 > 待报销"
@@ -77,7 +86,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 				}
 			}
 
-			// ⭐️ 核心修正 3：视图层 PostingItem 解耦投影 (彻底阻断跨包循环引用)
+			// ⭐️ 核心修正 3：视图层 PostingItem 解耦投影
 			var postingItems []PostingItem
 			if len(tx.Postings) > 0 {
 				postingItems = make([]PostingItem, 0, len(tx.Postings))
@@ -130,6 +139,7 @@ func BuildReplyData(batch *ledger.BatchTransactions, jumpURL, imageURL string) R
 			primaryCategory = "期初建账"
 		}
 
+		// 判定回执卡片总金额展示
 		var totalAmount float64
 		if hasIncome && !hasExpense {
 			totalAmount = incomeTotal
@@ -226,6 +236,8 @@ func (r ReplyData) SummaryHeadline() string {
 				return fmt.Sprintf("%s 已入账：%s +￥%.2f (%s)", IconIncome, r.PrimaryName, first.Amount, r.PrimaryCategory)
 			case "refund":
 				return fmt.Sprintf("%s 已记退款：%s +￥%.2f (%s)", IconRefund, r.PrimaryName, first.Amount, r.PrimaryCategory)
+			case "reimburse":
+				return fmt.Sprintf("%s 回款到账：%s +￥%.2f (%s)", IconIncome, r.PrimaryName, first.Amount, r.PrimaryCategory)
 			case "transfer":
 				return fmt.Sprintf("%s 已记录：%s ￥%.2f (%s)", IconTransfer, r.PrimaryName, first.Amount, r.PrimaryCategory)
 			default:

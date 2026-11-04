@@ -112,9 +112,8 @@
             font-size: 18px;
             font-weight: 700;
         }
-        /* 金额色彩按业务流向自适应 */
         .tx-amount.expense { color: var(--orange); }
-        .tx-amount.refund, .tx-amount.income { color: var(--green); }
+        .tx-amount.refund, .tx-amount.income, .tx-amount.reimburse { color: var(--green); }
         .tx-amount.transfer { color: var(--blue); }
 
         .tx-meta {
@@ -127,6 +126,13 @@
         .tx-meta-item {
             display: flex;
             align-items: center;
+            min-width: 0; /* 防止长账号溢出撑破 */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .tx-meta-value {
+            margin-left: 4px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -139,13 +145,15 @@
             font-size: 11px;
             font-weight: 500;
             margin-left: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .tx-tag.transfer-tag {
             background: #f1f5f9;
             color: #475569;
         }
 
-        /* 多分录借贷明细展开区 */
         .postings-box {
             margin-top: 10px;
             padding: 8px 10px;
@@ -267,7 +275,6 @@
 </head>
 <body>
     <div class="receipt-container">
-        <!-- 1. 小票头部 -->
         <div class="receipt-header">
             <div class="receipt-title">🧾 TallyMind 记账凭单</div>
             <div class="receipt-time">生成时间: {{ .NowTime }}</div>
@@ -285,22 +292,22 @@
             {{ end }}
         </div>
 
-        <!-- 2. 交易明细列表 -->
         <div class="receipt-body">
             {{ range .Receipt.Items }}
             <div class="tx-card">
                 <div class="tx-top">
                     <div class="tx-payee">{{ .DisplayName }}</div>
-                    <!-- 退款与收入显示绿色 + 号，消费显示橙色，划转显示蓝色 -->
                     <div class="tx-amount {{ .Type }}">
-                        {{ if eq .Type "refund" }}+{{ else if eq .Type "income" }}+{{ end }}￥{{ printf "%.2f" .Amount }} {{ .Currency }}
+                        {{ if or (eq .Type "refund") (eq .Type "income") (eq .Type "reimburse") }}+{{ end }}￥{{ printf "%.2f" .Amount }} {{ .Currency }}
                     </div>
                 </div>
 
                 <div class="tx-meta">
-                    <!-- ⭐️ 核心动态切换：按业务真实属性自适应展示分类、来源、业务或退回标签 -->
                     <div class="tx-meta-item">
-                        {{ if eq .Type "transfer" }}
+                        {{ if eq .Type "reimburse" }}
+                            <span>📥 回款:</span>
+                            <span class="tx-tag transfer-tag">{{ .DisplayCategory }}</span>
+                        {{ else if eq .Type "transfer" }}
                             <span>🔄 业务:</span>
                             <span class="tx-tag transfer-tag">{{ .DisplayCategory }}</span>
                         {{ else if eq .Type "refund" }}
@@ -315,37 +322,36 @@
                         {{ end }}
                     </div>
 
-                    <!-- ⭐️ 核心自适应：仅当单分录且有 Account 时显示单账户；多分录时隐藏此行，展示下方借贷明细 -->
                     {{ if and (not .Postings) .Account }}
                     <div class="tx-meta-item">
                         <span>💳 账户:</span>
-                        <span style="margin-left: 4px;">{{ .Account }}</span>
+                        <span class="tx-meta-value" title="{{ .Account }}">{{ .Account }}</span>
                     </div>
                     {{ end }}
 
                     <div class="tx-meta-item">
                         <span>📅 日期:</span>
-                        <span style="margin-left: 4px;">{{ .Date }}</span>
+                        <span class="tx-meta-value">{{ .Date }}</span>
                     </div>
                     <div class="tx-meta-item">
                         <span>👤 记账人:</span>
-                        <span style="margin-left: 4px;">{{ .Reporter }}</span>
+                        <span class="tx-meta-value">{{ .Reporter }}</span>
                     </div>
                     {{ if .Owner }}
                     <div class="tx-meta-item">
                         <span>💼 出资人:</span>
-                        <span style="margin-left: 4px;">{{ .Owner }}</span>
+                        <span class="tx-meta-value">{{ .Owner }}</span>
                     </div>
                     {{ end }}
-                    {{ if .Beneficiary }}
+                    <!-- ⭐️ 核心改进：非消费类 (如回款 reimburse 和资金互转 transfer) 自动隐藏受益人，消除违和感！ -->
+                    {{ if and .Beneficiary (ne .Type "reimburse") (ne .Type "transfer") }}
                     <div class="tx-meta-item">
                         <span>🎯 受益人:</span>
-                        <span style="margin-left: 4px; color: #ea580c; font-weight: 500;">{{ .Beneficiary }}</span>
+                        <span class="tx-meta-value" style="color: #ea580c; font-weight: 500;">{{ .Beneficiary }}</span>
                     </div>
                     {{ end }}
                 </div>
 
-                <!-- ⭐️ 多分录组合支付/拆单详细清单 (如官方电子发票底单) -->
                 {{ if .Postings }}
                 <div class="postings-box">
                     <div class="postings-header">
@@ -363,7 +369,6 @@
                 </div>
                 {{ end }}
 
-                <!-- 标签列表 (后端已清洗 #，模板标准输出单个 #) -->
                 {{ if .Tags }}
                 <div class="tx-tags-container">
                     {{ range .Tags }}
@@ -372,7 +377,6 @@
                 </div>
                 {{ end }}
 
-                <!-- 备注说明 -->
                 {{ if .Narration }}
                 <div class="tx-desc">
                     <strong>备注:</strong> {{ .Narration }}
@@ -382,7 +386,6 @@
             {{ end }}
         </div>
 
-        <!-- 3. 原始票据快照 -->
         {{ if .Receipt.ImageURL }}
         <div class="receipt-media">
             <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">📸 原始凭证快照</div>
@@ -390,7 +393,6 @@
         </div>
         {{ end }}
 
-        <!-- 4. 底部操作区 -->
         <div class="receipt-actions">
             {{ if .ReportPath }}
             <a class="btn-primary" href="{{ .ReportPath }}" target="_blank">
@@ -405,7 +407,6 @@
             {{ end }}
         </div>
 
-        <!-- 5. 页脚说明 -->
         <div class="receipt-footer">
             <span>Beancount 归档 · 共 {{ .Receipt.Count }} 笔 · 合计 ￥{{ printf "%.2f" .Receipt.TotalAmount }}</span>
         </div>

@@ -85,13 +85,12 @@ func (t *Transaction) EnsureDefaults(cfg Config, ctx RequestContext) {
 		}
 
 	} else {
-		// ⭐️ 核心改进 2：单分录传统模式 (区分消费与转账还款的合法性校验)
+		// ⭐️ 核心改进 2：单分录传统模式
 		isCatValid := false
-		if t.Type == "transfer" {
-			// 转账还款时，Category 应当是资金转入方的合法资产或负债账户 (如 Liabilities:CreditCard 或 Assets:Bank)
+		// ⭐️ 放行 transfer 与 reimburse！Category 允许为资产/负债债权账户，避免被误杀降级
+		if t.Type == "transfer" || t.Type == "reimburse" {
 			isCatValid = isValidAccount(t.Category)
 		} else {
-			// 普通消费/退款/开户，Category 必须是 Expenses, Income 或 Equity
 			isCatValid = isValidCategory(t.Category)
 		}
 
@@ -106,9 +105,9 @@ func (t *Transaction) EnsureDefaults(cfg Config, ctx RequestContext) {
 			t.Account = cfg.FallbackAccount
 		}
 
-		// 9. 将出账账户注入人名；若为转账还款，入账方 Category 也注入人名
+		// 9. 将出账账户注入人名；若为转账/回款，入账方 Category 也注入人名
 		t.Account = formatAccountWithOwner(t.Account, t.Meta.Owner)
-		if t.Type == "transfer" {
+		if t.Type == "transfer" || t.Type == "reimburse" {
 			t.Category = formatAccountWithOwner(t.Category, t.Meta.Owner)
 		}
 	}

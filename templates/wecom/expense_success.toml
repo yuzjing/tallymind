@@ -32,6 +32,15 @@ content = """
 ──────────────
 退回金额：+￥{{ printf "%.2f" .FirstItem.Amount }}
 冲减类目：{{ .PrimaryCategory }}
+  {{- else if eq .FirstItem.Type "reimburse" }}
+📥 回款到账 (债权结清)
+──────────────
+到账金额：+￥{{ printf "%.2f" .FirstItem.Amount }}
+核销业务：{{ .PrimaryCategory }}
+  {{- else if eq .FirstItem.Type "transfer" }}
+🔄 资金操作完成
+──────────────
+金额：￥{{ printf "%.2f" .FirstItem.Amount }} ({{ .PrimaryCategory }})
   {{- else }}
 ✨ 记账成功
 ──────────────
