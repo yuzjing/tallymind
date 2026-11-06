@@ -6,11 +6,11 @@
 1. **支出 (Expenses)**:
    - `Expenses:Food` (餐饮食品): `Breakfast`(早餐), `Lunch`(午餐), `Dinner`(晚餐), `Groceries`(生鲜买菜/食材米面), `Drinks`(咖啡茶饮/冲调奶粉), `Snacks`(水果零食卤味), `Feast`(聚餐宴请), `Delivery`(外卖配送)
    - `Expenses:Housing` (居住物业与生活): `Utilities`(水电燃气暖气), `Property`(物业费/车位管理费), `Broadband`(宽带网费), `Daily`(纸巾洗护日用易耗), `Appliances`(家电厨电大件), `Furniture`(家具软装), `Maintenance`(维修装修改造), `Rent`(房租)
-   - `Expenses:Transport` (出行与用车成本): `Public`(公交地铁), `Taxi`(打车网约车), `Fuel`(汽车加油/充电桩), `Parking`(停车费), `Toll`(高速路桥费), `Maintenance`(洗车修车保养年检), `Travel`(长途高铁机票大交通)
+   - `Expenses:Transport` (出行与用车成本): `Public`(公交地铁/公交卡充值), `Taxi`(打车网约车), `Fuel`(汽车加油/充电桩), `Parking`(停车费), `Toll`(高速路桥费), `Maintenance`(洗车修车保养年检), `Travel`(长途高铁机票大交通)
    - `Expenses:Digital` (数字生活与极客基础): `Server`(VPS/云主机/算力), `Domain`(域名注册续费), `AI`(大模型工具订阅), `Telecom`(手机话费流量套餐), `Cloud`(网盘云存储), `Media`(音视频会员), `Software`(正版软件授权)
    - `Expenses:Health` (健康与医疗保障): `Medicine`(处方及OTC药品), `Supplements`(维生素/钙片/鱼油等营养保健品), `Hospital`(医院就诊门诊挂号), `Dental`(牙科洗牙补牙), `Exam`(健康体检), `Device`(医疗器械耗材)
    - `Expenses:Shopping` (百货穿戴与装备): `Clothing`(衣服鞋帽), `Electronics`(数码3C/外设配件/充电器), `Cosmetics`(美妆护肤/痘痘贴), `Accessories`(箱包手表眼镜), `General`(日用杂项百货)
-   - `Expenses:Family` (育儿长辈与人情): `Baby`(母婴专属：婴儿配方奶粉/纸尿裤/儿童牙膏/玩具童车), `Elder`(孝敬父母长辈), `Gift`(送礼人情红包), `Pet`(宠物粮食医疗用品)
+   - `Expenses:Family` (育儿长辈与人情): `Baby`(仅限母婴专属：婴儿配方奶粉/纸尿裤/儿童牙膏/玩具童车), `Elder`(孝敬父母长辈), `Gift`(送礼人情红包), `Pet`(宠物粮食医疗用品)
    - `Expenses:Leisure` (休闲文娱与旅行): `Vacation`(旅游度假酒店门票), `Entertainment`(电影演出游戏娱乐), `Fitness`(运动健身装备场馆)
    - `Expenses:Edu` (教育成长与学习): `Books`(纸质及电子书教材), `Course`(网课技术专栏), `Exam`(考证报名费/软考考驾照), `Tuition`(学历及课外辅导班学费)
    - `Expenses:Finance` (金融税费与杂项): `ServiceFee`(银行/信用卡分期手续费), `Interest`(贷款分期利息), `Tax`(个人所得税及税费), `Other`(未知零星杂项)
@@ -30,7 +30,7 @@
        - `Assets:Receivables:Company` (因公业务垫付/待发票报销)
        - `Assets:Receivables:Family` (帮亲人/妹/兄弟/父母代买垫资待结清)
        - `Assets:Receivables:Friends` (亲友借出待收回/聚餐AA代付)
-     • ⭐️ 预付与定金资产: `Assets:Prepaid:Deposit` (待核销定金), `Assets:Prepaid:JDCard` (京东E卡), `Assets:Prepaid:GiftCard` (通用商超卡/交通卡)
+     • ⭐️ 预付与定金资产: `Assets:Prepaid:Deposit` (待核销定金), `Assets:Prepaid:JDCard` (京东E卡), `Assets:Prepaid:GiftCard` (通用商超卡)
      • 政策保障: `Assets:HousingFund:Default` (公积金), `Assets:HealthInsurance:Personal` (医保个人账户)
      • 投资与理财: `Assets:Investment:Fund`, `Assets:Investment:Stock`
    - **负债 (Liabilities)**:
@@ -81,23 +81,26 @@
        2. 差额确认为个人真实消费: `+3.51` (如 Expenses:Housing:Appliances)
        3. 原挂账代垫债权全额平仓: `-323.51` (Assets:Receivables:Family)
 
-10. **⭐️ 综合电商平台“去偏见”分类铁律**：按具体物品本身属性分类，严禁仅因“京东”无脑归为数码电子；无法推断商品内容时，兜底归入日用 `Expenses:Housing:Daily`。
+10. **⭐️ 充值、押金与礼品卡界定原则 (专款专用 vs 流动性)**：
+    - **专款专用的消费型充值 (沉没成本)**：如充公交卡、充水电气费、充手机话费。这笔钱充进去无法提现也无法买其他物品，**支付当天直接记为 100% 消费（如 `Expenses:Transport:Public`）**，严禁为其建立资产账户，后续刷卡也不再重复记账！
+    - **全品类高流动性礼品卡**：如京东E卡、大润发购物卡。它等同于电子现金，直接存入预付资产（如 `Assets:Prepaid:JDCard`），随买随记消费。
+    - **短期临时押金**：借充电宝、单车押金等，直接记日常支出；退回时记 `type: "refund"` 冲抵。
 
-11. **⭐️ 双模驱动输出原则 (单分录 vs 多分录 postings)**：单一渠道支付单一科目时输出单分录；组合支付、购物车多类目合并结算、付尾款冲减定金、或结清抹平差额时激活 `postings` 借贷数组。
+11. **⭐️ 综合电商平台“去偏见”分类铁律**：按具体物品本身属性分类，严禁仅因“京东”无脑归为数码电子；无法推断商品内容时，兜底归入日用 `Expenses:Housing:Daily`。
 
-12. **⭐️ 付定金与预售处理**：支付定金时资金转入 `category: "Assets:Prepaid:Deposit"`, `type: "transfer"`, 不计入当期消费支出。
+12. **⭐️ 双模驱动输出原则 (单分录 vs 多分录 postings)**：单一渠道支付单一科目时输出单分录；组合支付、购物车多类目合并结算、付尾款冲减定金、或结清抹平差额时激活 `postings` 借贷数组。
 
-13. **⭐️ 退款与补偿双轨制（实体退货退费必须原路冲减原科目）**：
+13. **⭐️ 付定金与预售处理**：支付定金时资金转入 `category: "Assets:Prepaid:Deposit"`, `type: "transfer"`, 不计入当期消费支出。
+
+14. **⭐️ 退款与补偿双轨制（实体退货退费必须原路冲减原科目）**：
     - **实体商品退货或服务培训退费**（如“退电视支架”、“退衣服”）：必须填写原支出的科目原路冲减（`type: "refund"`, `category` 填原支出科目），严禁记入 Income:Refund（避免当期收支双双虚增）！
     - **无实物平台的补偿返现**（价保退款、红包返现、服务费补偿）：归入进账（`type: "income"`, `category: "Income:Refund"` 或 `Income:Other"`）。
 
-14. **⭐️ 复合输入账户继承**：一句话记录多笔流水时，后续分句若未指明新渠道，强制继承前文账户。
+15. **⭐️ 复合输入账户继承**：一句话记录多笔流水时，后续分句若未指明新渠道，强制继承前文账户。
 
-15. **⭐️ 内部转账原则**：账户互转、还信用卡提取为单条交易：`type: "transfer"`, `account`: 出账账户, `category`: 入账账户。
+16. **⭐️ 内部转账原则**：账户互转、还信用卡提取为单条交易：`type: "transfer"`, `account`: 出账账户, `category`: 入账账户。
 
-16. **⭐️ 已有账户代码强制复用**：匹配银行代码时优先参考 `{{ .ContextHints }}`，若已存在账户（如 `Bank:BCM`），必须 100% 沿用该代码。
-
-17. **【日常押金简化】**：短期临时押金直接记日常支出，退回时记 `type: "refund"` 冲抵，不建资产账户。
+17. **⭐️ 已有账户代码强制复用**：匹配银行代码时优先参考 `{{ .ContextHints }}`，若已存在账户（如 `Bank:BCM`），必须 100% 沿用该代码。
 
 18. **【首次开户建账】**：`category: "Equity:Opening-Balances"`, `type: "income"`, `balance_assertions` 必须保持为空 `[]`。
 
@@ -132,6 +135,28 @@
         "original_amount": "",
         "discount_amount": "",
         "time": "12:15:00",
+        "location": "",
+        "link": ""
+      },
+      "postings": []
+    },
+    {
+      "amount": 10.00,
+      "currency": "CNY",
+      "date": "{{ .Today }}",
+      "payee": "公交公司",
+      "narration": "充值公交卡 (专款专用记消费)",
+      "category": "Expenses:Transport:Public",
+      "account": "Assets:WeChat:Wallet",
+      "type": "expense",
+      "tags": [],
+      "metadata": {
+        "owner": "zhaozhao",
+        "beneficiary": "zhaozhao",
+        "invoice_status": "",
+        "original_amount": "",
+        "discount_amount": "",
+        "time": "08:15:00",
         "location": "",
         "link": ""
       },
@@ -182,44 +207,22 @@
       "postings": []
     },
     {
-      "amount": 1000.00,
+      "amount": 320.00,
       "currency": "CNY",
       "date": "{{ .Today }}",
-      "payee": "信用卡还款",
-      "narration": "中行还款浙商信用卡",
-      "category": "Liabilities:CreditCard:CZCB",
-      "account": "Assets:Bank:BOC",
-      "type": "transfer",
-      "tags": [],
-      "metadata": {
-        "owner": "zhaozhao",
-        "beneficiary": "",
-        "invoice_status": "",
-        "original_amount": "",
-        "discount_amount": "",
-        "time": "09:12:00",
-        "location": "",
-        "link": ""
-      },
-      "postings": []
-    },
-    {
-      "amount": 85.00,
-      "currency": "CNY",
-      "date": "{{ .Today }}",
-      "payee": "滴滴出行",
-      "narration": "出差拜访客户打车 (因公垫付待报销)",
-      "category": "Assets:Receivables:Company",
+      "payee": "岳母",
+      "narration": "监控摄像头费用报销到账 (亲属垫付结清)",
+      "category": "Assets:Receivables:Family",
       "account": "Assets:WeChat:Wallet",
-      "type": "transfer",
+      "type": "reimburse",
       "tags": ["#reimbursement"],
       "metadata": {
         "owner": "zhaozhao",
-        "beneficiary": "zhaozhao",
-        "invoice_status": "pending",
+        "beneficiary": "",
+        "invoice_status": "done",
         "original_amount": "",
         "discount_amount": "",
-        "time": "14:20:00",
+        "time": "10:44:00",
         "location": "",
         "link": ""
       },
