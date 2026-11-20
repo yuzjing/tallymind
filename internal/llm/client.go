@@ -208,73 +208,75 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 			break
 		}
 
-		reqPayload := ChatRequest{
-			Model: provider.Model,
-			Messages: []ChatMessage{
-				{Role: "system", Content: c.buildSystemPrompt(contextHints)},
-				{Role: "user", Content: parts},
-			},
-			Temperature:      provider.Temperature,      // 读取当前模型的独立温度
-			TopP:             provider.TopP,             // 读取当前模型的独立 TopP
-			FrequencyPenalty: provider.FrequencyPenalty, // 读取当前模型的惩罚系数
-			PresencePenalty:  provider.PresencePenalty,
-			MaxTokens:        provider.MaxTokens, // 读取当前模型独立的最大 Token
-			ResponseFormat:   &ResponseFormat{Type: "json_object"},
-		}
+		// ⭐️ 使用局部闭包：单次请求独立上下文，完美契合 defer cancel() 与 defer resp.Body.Close()
+		body, err := func() ([]byte, error) {
+			reqCtx := ctx
+			if provider.Timeout > 0 {
+				var cancel context.CancelFunc
+				reqCtx, cancel = context.WithTimeout(ctx, provider.Timeout)
+				defer cancel()
+			}
 
-		reqBytes, err := json.Marshal(reqPayload)
+			reqPayload := ChatRequest{
+				Model: provider.Model,
+				Messages: []ChatMessage{
+					{Role: "system", Content: c.buildSystemPrompt(contextHints)},
+					{Role: "user", Content: parts},
+				},
+				Temperature:      provider.Temperature,
+				TopP:             provider.TopP,
+				FrequencyPenalty: provider.FrequencyPenalty,
+				PresencePenalty:  provider.PresencePenalty,
+				MaxTokens:        provider.MaxTokens,
+				ResponseFormat:   &ResponseFormat{Type: "json_object"},
+			}
+
+			reqBytes, err := json.Marshal(reqPayload)
+			if err != nil {
+				return nil, fmt.Errorf("序列化 LLM 请求体失败: %w", err)
+			}
+
+			baseURL := strings.TrimRight(provider.BaseURL, "/")
+			apiURL := fmt.Sprintf("%s/chat/completions", baseURL)
+
+			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, apiURL, bytes.NewBuffer(reqBytes))
+			if err != nil {
+				return nil, fmt.Errorf("创建 HTTP 请求失败: %w", err)
+			}
+
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
+
+			for k, v := range provider.ExtraHeaders {
+				req.Header.Set(k, v)
+			}
+
+			resp, err := c.httpClient.Do(req)
+			if err != nil {
+				return nil, fmt.Errorf("调用 [%s] 网络异常: %w", provider.Model, err)
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, fmt.Errorf("读取 [%s] 响应体失败: %w", provider.Model, err)
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				slog.WarnContext(ctx, "[LLM] API 返回非 200 状态码，准备容灾切换",
+					"status", resp.StatusCode,
+					"model", provider.Model,
+					"error_body", string(body),
+				)
+				return nil, fmt.Errorf("provider [%s] 请求失败 (HTTP %d): %s", provider.Model, resp.StatusCode, string(body))
+			}
+
+			return body, nil
+		}()
+
 		if err != nil {
-			return nil, fmt.Errorf("序列化 LLM 请求体失败: %w", err)
-		}
-
-		// 规范化 URL 拼接，防止尾部斜杠导致 double slash
-		baseURL := strings.TrimRight(provider.BaseURL, "/")
-		apiURL := fmt.Sprintf("%s/chat/completions", baseURL)
-
-		reqCtx := ctx
-		if provider.Timeout > 0 {
-			var cancel context.CancelFunc
-			reqCtx, cancel = context.WithTimeout(reqCtx, provider.Timeout)
-			defer cancel()
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(reqBytes))
-		if err != nil {
-			return nil, fmt.Errorf("创建 HTTP 请求失败: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
-
-		for k, v := range provider.ExtraHeaders {
-			req.Header.Set(k, v)
-		}
-
-		// 执行请求
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("调用 [%s] 网络异常: %w", provider.Model, err)
-			slog.WarnContext(ctx, "[LLM] 网络请求失败，尝试切换下一个 Provider", "model", provider.Model, "err", err)
-			continue
-		}
-
-		// 读取响应体并确保安全关闭
-		body, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-
-		if readErr != nil {
-			lastErr = fmt.Errorf("读取 [%s] 响应体失败: %w", provider.Model, readErr)
-			continue
-		}
-
-		// 非 200 状态码统一处理并打印原始错误信息
-		if resp.StatusCode != http.StatusOK {
-			slog.WarnContext(ctx, "[LLM] API 返回非 200 状态码，准备容灾切换",
-				"status", resp.StatusCode,
-				"model", provider.Model,
-				"error_body", string(body), // 关键：记录上游返回的具体错误原因
-			)
-			lastErr = fmt.Errorf("provider [%s] 请求失败 (HTTP %d): %s", provider.Model, resp.StatusCode, string(body))
+			lastErr = err
+			slog.WarnContext(ctx, "[LLM] Provider 调用失败，准备切换下一个", "model", provider.Model, "err", err)
 
 			// 遇到限流或异常时略作退避，但仍监听 Context
 			select {
