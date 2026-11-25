@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
+
+var fileWriteMu sync.Mutex
 
 // AppendBatchTransactions 自动按年份拆分文件并追加写入
 func AppendBatchTransactions(dataDir string, req *BatchTransactions, cfg Config, ctx RequestContext) error {
@@ -46,7 +49,10 @@ func AppendBatchTransactions(dataDir string, req *BatchTransactions, cfg Config,
 		yearlyTextMap[targetPath].WriteString(b.ToBeancountFormat(cfg))
 	}
 
-	// 3. 遍历年份 map，分别追加写入对应的 .bean 文件
+	// 3. 遍历年份 map，加锁串行追加写入对应的 .bean 文件，防止多用户并发写同一年度账本交错
+	fileWriteMu.Lock()
+	defer fileWriteMu.Unlock()
+
 	for targetPath, builder := range yearlyTextMap {
 		dir := filepath.Dir(targetPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {

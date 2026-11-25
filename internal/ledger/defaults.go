@@ -103,6 +103,7 @@ func (t *Transaction) EnsureDefaults(cfg Config, ctx RequestContext) {
 		// 8. 账户检查与保底
 		if !isValidAccount(t.Account) || t.Account == "" {
 			t.Account = cfg.FallbackAccount
+			needsReview = true
 		}
 
 		// 9. 将出账账户注入人名；若为转账/回款，入账方 Category 也注入人名
