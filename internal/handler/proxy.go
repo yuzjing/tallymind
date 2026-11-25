@@ -43,7 +43,6 @@ func RegisterPanelProxy(r gin.IRouter, mountPath, targetURL, signSecret string) 
 			"path", reqPath,
 			"query_token_present", token != "",
 			"cookie_present", cookieErr == nil,
-			"cookie_val", cookie,
 		)
 
 		// -------------------------------------------------------------
@@ -60,22 +59,27 @@ func RegisterPanelProxy(r gin.IRouter, mountPath, targetURL, signSecret string) 
 					crypto.DefaultTokenSignLen,
 				)
 
-				// 根路径 Cookie (兼容 HTTP/HTTPS)
+				// 兼容公网 HTTPS (Cloudflare Tunnel 会透传 X-Forwarded-Proto=https) 与内网 HTTP 直连
+				isHTTPS := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+				c.SetSameSite(http.SameSiteLaxMode)
 				c.SetCookie(
 					SessionCookieName,
 					sessionToken,
 					7200, // 2 小时有效
 					"/",  // 根路径全站有效
 					"",
-					false, // 设为 false 保证在各类反代/直连环境下均可正常生效
-					true,  // HttpOnly 防脚本窃取
+					isHTTPS, // 公网 HTTPS 自动启用 Secure
+					true,    // HttpOnly 防脚本窃取
 				)
+
+				// 阻断浏览器 Referer 携带 ?token=... 外泄，同时保留 0 重定向首屏秒开体验
+				c.Header("Referrer-Policy", "no-referrer")
 
 				// ⭐️ 直接反代给 Fava (0 重定向，首屏秒开！)
 				proxy.ServeHTTP(c.Writer, c.Request)
 				return
 			}
-			slog.Warn("❌ [Proxy] URL 携带的 Token 验签失败或已过期", "token", token)
+			slog.Warn("❌ [Proxy] URL 携带的 Token 验签失败或已过期", "path", reqPath)
 		}
 
 		// -------------------------------------------------------------

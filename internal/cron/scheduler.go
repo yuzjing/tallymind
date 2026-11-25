@@ -2,8 +2,8 @@
 package cron
 
 import (
+	"cmp"
 	"context"
-	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -30,16 +30,8 @@ func NewScheduler(cfg *config.Config, accountingService *service.AccountingServi
 		cfg:               cfg,
 		accountingService: accountingService,
 		notifierMgr:       notifierMgr,
-		dispatchers:       make(map[string][]ReportDispatcher),
 		tasks:             BuildTasksFromConfig(cfg),
 	}
-}
-
-// OnReport ⭐️ 彻底消除 wecom/handler.go 报错：保留插件动态注册回调接口
-func (s *Scheduler) OnReport(period string, dispatcher ReportDispatcher) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.dispatchers[period] = append(s.dispatchers[period], dispatcher)
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
@@ -83,23 +75,6 @@ func (s *Scheduler) Trigger(ctx context.Context, period string) {
 		targetTime = now.AddDate(0, -1, 0)
 	default:
 		targetTime = now
-	}
-
-	// -------------------------------------------------------------
-	// 模式 1：触发代码中通过 OnReport 动态挂载的旧分发器 (兼容 Handler)
-	// -------------------------------------------------------------
-	s.mu.RLock()
-	handlers := append([]ReportDispatcher(nil), s.dispatchers[period]...)
-	s.mu.RUnlock()
-
-	if len(handlers) > 0 {
-		if defaultReport, err := s.accountingService.GetPeriodicReport(ctx, period, targetTime, "", ""); err == nil {
-			for _, handler := range handlers {
-				if err := handler(ctx, defaultReport); err != nil {
-					slog.ErrorContext(ctx, "分发报表失败", "period", period, "err", err)
-				}
-			}
-		}
 	}
 
 	// -------------------------------------------------------------
@@ -147,15 +122,13 @@ func (s *Scheduler) Trigger(ctx context.Context, period string) {
 			Content: msgPayload.Text.Content,
 		}
 
-		var sendErr error
-		switch strings.ToLower(target.Channel) {
-		case "webhook":
-			sendErr = s.notifierMgr.SendDirect(ctx, "webhook", target.URL, msg)
-		case "app", "wecom":
-			sendErr = s.notifierMgr.SendDirect(ctx, "wecom", target.ToUser, msg)
-		default:
-			sendErr = fmt.Errorf("不支持的推送通道: %s", target.Channel)
+		driver := strings.ToLower(strings.TrimSpace(target.Channel))
+		if driver == "app" {
+			driver = "wecom"
 		}
+		dest := cmp.Or(strings.TrimSpace(target.ToUser), strings.TrimSpace(target.URL))
+
+		sendErr := s.notifierMgr.SendDirect(ctx, driver, dest, msg)
 
 		if sendErr != nil {
 			slog.ErrorContext(ctx, "推送目标失败", "target", target.Name, "err", sendErr)

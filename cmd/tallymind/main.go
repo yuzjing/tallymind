@@ -36,8 +36,8 @@ func main() {
 	closeLogger := logger.InitLogger(cfg.Log)
 	defer closeLogger()
 
-	slog.Info("🚀 tallymind 启动中 | 应用开关配置", "App", cfg.App)
-	slog.Info("📁 账本存储配置", "ledger", cfg.Ledger)
+	slog.Info("🚀 tallymind 启动中 | 应用配置", "App", cfg.App)
+	slog.Info("📁 账本存储配置", "data_dir", cfg.Ledger.DataDir, "currency", cfg.Ledger.DefaultCurrency)
 
 	var llmClient *llm.Client
 	if cfg.App.EnableLLM {
@@ -46,7 +46,7 @@ func main() {
 		if err != nil {
 			slog.Warn("⚠️ 大模型客户端未就绪 (降级运行)", "err", err)
 		} else {
-			slog.Info("🤖 大模型客户端已就绪", "model", cfg.LLM.Providers)
+			slog.Info("🤖 大模型客户端已就绪", "llm", cfg.LLM)
 		}
 	} else {
 		slog.Info("⏹️ ENABLE_LLM=false，已关闭大模型功能")
@@ -121,8 +121,13 @@ func main() {
 			slog.Info("🔒 生产环境 (production) 已安全禁用 Swagger API 文档")
 		}
 
-		txHandler := handler.NewTransactionHandler(accountingService)
-		r.POST("/api/v1/transaction", txHandler.HandleTransaction)
+		if cfg.App.APIToken != "" {
+			txHandler := handler.NewTransactionHandler(accountingService, cfg.App.APIToken)
+			r.POST("/api/v1/transaction", txHandler.HandleTransaction)
+			slog.Info("🔌 通用记账 REST API 已启用 (Token 鉴权)", "path", "/api/v1/transaction")
+		} else {
+			slog.Info("⏹️ 未配置 app.api_token，/api/v1/transaction 已默认关闭")
+		}
 
 		receiptHandler := handler.NewReceiptHandler(cfg, accountingService)
 		receiptHandler.RegisterRoutes(r)
@@ -143,8 +148,10 @@ func main() {
 		}
 
 		srv = &http.Server{
-			Addr:    fmt.Sprintf(":%d", cfg.App.Port),
-			Handler: r,
+			Addr:              fmt.Sprintf(":%d", cfg.App.Port),
+			Handler:           r,
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		}
 
 		go func() {

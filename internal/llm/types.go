@@ -57,6 +57,7 @@ type ChatRequest struct {
 	FrequencyPenalty float64         `json:"frequency_penalty,omitempty"`
 	PresencePenalty  float64         `json:"presence_penalty,omitempty"`
 	MaxTokens        int64           `json:"max_tokens,omitempty"`
+	ReasoningEffort  string          `json:"reasoning_effort,omitempty"`
 	ResponseFormat   *ResponseFormat `json:"response_format,omitempty"`
 }
 
@@ -66,11 +67,17 @@ type ResponseFormat struct {
 
 type ChatCompletionResponse struct {
 	Choices []struct {
-		Message struct {
-			Role    string `json:"message"`
+		FinishReason string `json:"finish_reason"` // "stop" | "length" | "content_filter"
+		Message      struct {
+			Role    string `json:"role"`
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
@@ -81,12 +88,13 @@ type Provider struct {
 	APIKey           string            `json:"api_key"`
 	BaseURL          string            `json:"base_url"`
 	Model            string            `json:"model"`
-	MaxTokens        int64             `json:"max_tokens,omitempty"`  // 模型独立最大 Token
-	Temperature      float64           `json:"temperature,omitempty"` // 模型独立采样温度
-	TopP             float64           `json:"top_p,omitempty"`       // 模型独立 TopP
+	MaxTokens        int64             `json:"max_tokens,omitempty"`       // 模型独立最大 Token
+	ReasoningEffort  string            `json:"reasoning_effort,omitempty"` // 思考强度控制
+	Temperature      float64           `json:"temperature,omitempty"`      // 模型独立采样温度
+	TopP             float64           `json:"top_p,omitempty"`            // 模型独立 TopP
 	FrequencyPenalty float64           `json:"frequency_penalty,omitempty"`
 	PresencePenalty  float64           `json:"presence_penalty,omitempty"`
-	Timeout          time.Duration     `json:"timeout,omitempty"`       // 请求超时时间 (毫秒)
+	Timeout          time.Duration     `json:"timeout,omitempty"`       // 请求超时时间 (time.Duration)
 	ExtraHeaders     map[string]string `json:"extra_headers,omitempty"` // 请求头扩展
 }
 

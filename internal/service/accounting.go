@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"tallymind/internal/config"
 	"tallymind/internal/crypto"
@@ -78,7 +79,13 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 	currentActor := resolveActor(in.UserID, s.ledgerConfig.Members, s.ledgerConfig.DefaultReporter)
 	contextHints := formatContextHints(currentActor, s.ledgerConfig.Members)
 
-	// 3. 调用大模型进行多模态语义解析
+	// 2.5 前置防线：超长纯文本直接引导拆分，避免上下文跨段失真与推理超时
+	if maxRunes := s.cfg.LLM.MaxInputRunes; maxRunes > 0 {
+		if runeCount := utf8.RuneCountInString(in.UserText); runeCount > maxRunes {
+			return reporter.ReplyData{}, fmt.Errorf("单次输入过长（当前 %d 字，上限 %d 字），为保证记账准确率，请按账户或日期拆分后分批发送", runeCount, maxRunes)
+		}
+	}
+	// 3. 调用大模型进行多模态语义解析 (图片/音频/文本统一由 client.go 的 finish_reason=="length" 做输出溢出兜底)
 	batch, err := s.llmClient.ParseTransaction(ctx, in.UserText, contextHints, llmAttachments...)
 	if err != nil {
 		return reporter.ReplyData{}, fmt.Errorf("AI 解析账单失败: %w", err)
@@ -92,6 +99,9 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 	// ⭐️ 3.5 交易流水智能反查与双重保底
 	for i := range batch.Transactions {
 		tx := &batch.Transactions[i]
+		if tx.Meta == nil {
+			tx.Meta = &ledger.Metadata{}
+		}
 		tx.Meta.Reporter = currentActor
 
 		if strings.TrimSpace(tx.Meta.Owner) == "" {
@@ -100,10 +110,18 @@ func (s *AccountingService) Process(ctx context.Context, in AccountingInput) (re
 			tx.Meta.Owner = resolveActor(tx.Meta.Owner, s.ledgerConfig.Members, currentActor)
 		}
 
-		if strings.TrimSpace(tx.Meta.Beneficiary) == "" {
-			tx.Meta.Beneficiary = currentActor
-		} else {
-			tx.Meta.Beneficiary = resolveActor(tx.Meta.Beneficiary, s.ledgerConfig.Members, currentActor)
+		switch tx.Type {
+		case "reimburse", "transfer", "income":
+			// 报销回款、内部转账、常规收入不强制回填受益人，保持与 Prompt 规则一致
+			if strings.TrimSpace(tx.Meta.Beneficiary) != "" {
+				tx.Meta.Beneficiary = resolveActor(tx.Meta.Beneficiary, s.ledgerConfig.Members, "")
+			}
+		default:
+			if strings.TrimSpace(tx.Meta.Beneficiary) == "" {
+				tx.Meta.Beneficiary = currentActor
+			} else {
+				tx.Meta.Beneficiary = resolveActor(tx.Meta.Beneficiary, s.ledgerConfig.Members, currentActor)
+			}
 		}
 	}
 

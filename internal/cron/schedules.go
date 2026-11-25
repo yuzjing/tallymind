@@ -36,6 +36,16 @@ func ParseWeeklySchedule(spec string) ScheduleFunc {
 			weekday = time.Sunday
 		case "monday", "mon", "周一", "星期一":
 			weekday = time.Monday
+		case "tuesday", "tue", "周二", "星期二":
+			weekday = time.Tuesday
+		case "wednesday", "wed", "周三", "星期三":
+			weekday = time.Wednesday
+		case "thursday", "thu", "周四", "星期四":
+			weekday = time.Thursday
+		case "friday", "fri", "周五", "星期五":
+			weekday = time.Friday
+		case "saturday", "sat", "周六", "星期六":
+			weekday = time.Saturday
 		}
 		timeParts := strings.Split(parts[1], ":")
 		if len(timeParts) >= 2 {

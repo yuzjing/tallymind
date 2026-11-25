@@ -3,6 +3,7 @@ package llm
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,9 +38,12 @@ func (c *Client) toDataURI(ctx context.Context, mediaURL string) (string, error)
 	var mediaBytes []byte
 	var mimeType string
 
-	// 2. 如果是远程 HTTP/HTTPS 链接 -> 下载到内存
+	// 2. 如果是远程 HTTP/HTTPS 链接 -> 下载到内存 (独立 20s 下载超时，不依赖全局 Client.Timeout)
 	if strings.HasPrefix(mediaURL, "http://") || strings.HasPrefix(mediaURL, "https://") {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, mediaURL, nil)
+		dlCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, mediaURL, nil)
 		if err != nil {
 			return "", fmt.Errorf("创建媒体文件下载请求失败: %w", err)
 		}
@@ -140,7 +145,13 @@ func NewClient(cfg Config) (*Client, error) {
 		cfg:          cfg,
 		providerPool: pool,
 		httpClient: &http.Client{
-			Timeout: 20 * time.Second, // 20 秒超时控制
+			// 不设置全局 Client.Timeout，避免静默截断大于 20s 的长文本推理；总超时交由单次 reqCtx 掌控
+			Transport: &http.Transport{
+				Proxy:               http.ProxyFromEnvironment, // 保留 HTTP_PROXY / NO_PROXY 分流能力
+				DialContext:         (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+				TLSHandshakeTimeout: 10 * time.Second,
+				IdleConnTimeout:     90 * time.Second,
+			},
 		},
 	}, nil
 }
@@ -196,6 +207,9 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 	var respBytes []byte
 	var lastErr error
 
+	// 在重试循环外构建一次 System Prompt（仍保持每次请求热读取最新模板，但不随故障转移重复读盘）
+	systemPrompt := c.buildSystemPrompt(contextHints)
+
 	for range poolSize {
 		// 快速响应 Context 取消/超时
 		if err := ctx.Err(); err != nil {
@@ -210,17 +224,14 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 
 		// ⭐️ 使用局部闭包：单次请求独立上下文，完美契合 defer cancel() 与 defer resp.Body.Close()
 		body, err := func() ([]byte, error) {
-			reqCtx := ctx
-			if provider.Timeout > 0 {
-				var cancel context.CancelFunc
-				reqCtx, cancel = context.WithTimeout(ctx, provider.Timeout)
-				defer cancel()
-			}
+			timeout := cmp.Or(provider.Timeout, 60*time.Second)
+			reqCtx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
 
 			reqPayload := ChatRequest{
 				Model: provider.Model,
 				Messages: []ChatMessage{
-					{Role: "system", Content: c.buildSystemPrompt(contextHints)},
+					{Role: "system", Content: systemPrompt},
 					{Role: "user", Content: parts},
 				},
 				Temperature:      provider.Temperature,
@@ -228,6 +239,7 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 				FrequencyPenalty: provider.FrequencyPenalty,
 				PresencePenalty:  provider.PresencePenalty,
 				MaxTokens:        provider.MaxTokens,
+				ReasoningEffort:  provider.ReasoningEffort,
 				ResponseFormat:   &ResponseFormat{Type: "json_object"},
 			}
 
@@ -313,9 +325,27 @@ func (c *Client) ParseTransaction(ctx context.Context, userText string, contextH
 		return nil, fmt.Errorf("LLM API 未返回任何有效的 Choice 结果")
 	}
 
-	// 7. 提取 AI 生成的文本并清洗 Markdown 杂质
-	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
-	content = cleanMarkdownJSON(content)
+	if chatResp.Usage != nil {
+		thinkingTokens := max(0, chatResp.Usage.TotalTokens-chatResp.Usage.PromptTokens-chatResp.Usage.CompletionTokens)
+		slog.DebugContext(ctx, "[LLM] Token 消耗统计",
+			"prompt_tokens", chatResp.Usage.PromptTokens,
+			"completion_tokens", chatResp.Usage.CompletionTokens,
+			"thinking_tokens", thinkingTokens,
+			"total_tokens", chatResp.Usage.TotalTokens,
+		)
+	}
+
+	// 7. 校验结束原因并提取文本
+	choice := chatResp.Choices[0]
+	if choice.FinishReason == "length" {
+		slog.ErrorContext(ctx, "[LLM] 输出因达到 max_tokens 上限被截断",
+			"finish_reason", choice.FinishReason,
+			"content_len", len(choice.Message.Content),
+		)
+		return nil, fmt.Errorf("账单内容过长，AI 输出达到 max_tokens 上限被截断（请拆分发送或调大 max_tokens）")
+	}
+
+	content := cleanMarkdownJSON(strings.TrimSpace(choice.Message.Content))
 
 	// 8. 映射为领域记账模型
 	var batch ledger.BatchTransactions

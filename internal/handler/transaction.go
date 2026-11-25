@@ -4,8 +4,10 @@ package handler
 
 import (
 	"cmp"
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
+	"strings"
 	"tallymind/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -13,10 +15,14 @@ import (
 
 type TransactionHandler struct {
 	accountService *service.AccountingService
+	apiToken       string
 }
 
-func NewTransactionHandler(accountService *service.AccountingService) *TransactionHandler {
-	return &TransactionHandler{accountService: accountService}
+func NewTransactionHandler(accountService *service.AccountingService, apiToken string) *TransactionHandler {
+	return &TransactionHandler{
+		accountService: accountService,
+		apiToken:       strings.TrimSpace(apiToken),
+	}
 }
 
 // HandleTransaction 通用 HTTP 记账 API 接口
@@ -32,9 +38,26 @@ func NewTransactionHandler(accountService *service.AccountingService) *Transacti
 // @Failure      400               {object}  APIResponse               "参数校验或保存失败"
 // @Router       /api/v1/transaction [post]
 func (h *TransactionHandler) HandleTransaction(c *gin.Context) {
+	// 若配置了 app.api_token，则强制执行常量时间比对校验 (兼容 Authorization: Bearer 或 X-API-Key)
+	if h.apiToken != "" {
+		provided := strings.TrimSpace(c.GetHeader("X-API-Key"))
+		if provided == "" {
+			if auth := c.GetHeader("Authorization"); len(auth) > 7 && strings.EqualFold(auth[:7], "Bearer ") {
+				provided = strings.TrimSpace(auth[7:])
+			}
+		}
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(h.apiToken)) != 1 {
+			c.JSON(http.StatusUnauthorized, APIResponse{
+				Code:    401,
+				Message: "未授权的 API 请求",
+			})
+			return
+		}
+	}
+
 	// 获取请求header
-	userID := cmp.Or(c.GetHeader("X-User-ID"))
-	sourceChannel := cmp.Or(c.GetHeader("X-Source-Channel"), "unknown_api_plugin")
+	userID := strings.TrimSpace(c.GetHeader("X-User-ID"))
+	sourceChannel := cmp.Or(strings.TrimSpace(c.GetHeader("X-Source-Channel")), "unknown_api_plugin")
 
 	// Gin 的极简 JSON 绑定与自动校验
 	var req service.BatchTransactions

@@ -21,6 +21,8 @@ enable_reporter = false                      # 是否开启定时报表
 weekly_report_time = "Sunday 20:00"
 monthly_report_time = "1 09:30"
 
+api_token = "${TALLYMIND_API_TOKEN}"   # 若需公网调 /api/v1/transaction 建议配置；不配则不校验
+
 [[app.reporter_targets]]
 name = "家庭群大盘"
 channel = "webhook"
@@ -61,12 +63,14 @@ compress = true                              # 历史旧日志是否自动 gzip 
 # ==============================================================================
 [llm]
 prompt_template = "prompt/system_prompt.md"
+max_input_runes = 3000                 # 默认 3000 字 (~180+ 笔账单)；设 -1 则完全交由 finish_reason 兜底
 
 [[llm.providers]]
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-model = "gemini-2.5-flash"
+model = "${GEMINI_API_KEY_1}"
 api_key = "AQ.GeminiKey1_Account1..."
-max_tokens = 4096
+max_tokens = 65536
+reasoning_effort = "medium"   
 temperature = 0.2
 top_p = 0.0
 frequency_penalty = 0.0
@@ -76,8 +80,9 @@ timeout = "30s"
 [[llm.providers]]
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 model = "gemini-2.5-flash"
-api_key = "AQ.GeminiKey2_Account2..."
-max_tokens = 4096
+api_key = "${GEMINI_API_KEY_2}"
+max_tokens = 65536
+reasoning_effort = "medium"  
 temperature = 0.2
 top_p = 0.0
 frequency_penalty = 0.0

@@ -3,8 +3,10 @@ package config
 import (
 	"cmp"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
@@ -27,6 +29,7 @@ type AppConfig struct {
 	Debug             bool   `toml:"debug"`               // true / false
 	Port              int    `toml:"port"`                // 监听端口
 	ReceiptSignSecret string `toml:"receipt_sign_secret"` // 小票签名密钥
+	APIToken          string `toml:"api_token"`           // 通用 REST API 鉴权密钥 (可选，留空则不校验)
 	TemplateDir       string `toml:"template_dir"`        // 模板目录路径
 	ReceiptTemplate   string `toml:"receipt_template"`    // 小票模板路径
 	ReportTemplate    string `toml:"report_template"`     // 报告模板路径
@@ -85,6 +88,7 @@ type LLMProviderConfig struct {
 	BaseURL          string            `toml:"base_url"`
 	Model            string            `toml:"model"`
 	MaxTokens        int64             `toml:"max_tokens"`
+	ReasoningEffort  string            `toml:"reasoning_effort"` // "none" | "low" | "medium" | "high"
 	Temperature      *float64          `toml:"temperature"`
 	TopP             *float64          `toml:"top_p"`
 	FrequencyPenalty *float64          `toml:"frequency_penalty"`
@@ -97,6 +101,7 @@ type LLMProviderConfig struct {
 type LLMConfig struct {
 	Providers      []LLMProviderConfig `toml:"providers"`
 	PromptTemplate string              `toml:"prompt_template"`
+	MaxInputRunes  int                 `toml:"max_input_runes"` // 单次纯文本字数上限 (默认 3000，设 -1 不限制)
 }
 
 // 推送目标
@@ -114,18 +119,19 @@ func (c *LLMConfig) ToDomain(templateDir string) llm.Config {
 	fullPromptPath := filepath.Join(templateDir, c.PromptTemplate)
 	providers := make([]llm.Provider, len(c.Providers))
 	for i, p := range c.Providers {
-		// 解析超时时间 (默认 30 秒)
+		// 解析超时时间 (默认 60 秒，适配长账单生成)
 		timeoutDur, err := time.ParseDuration(p.Timeout)
 		if err != nil || timeoutDur <= 0 {
-			timeoutDur = 30 * time.Second
+			timeoutDur = 60 * time.Second
 		}
 
 		providers[i] = llm.Provider{
 			APIKey:           p.APIKey,
 			BaseURL:          p.BaseURL,
 			Model:            p.Model,
-			MaxTokens:        cmp.Or(p.MaxTokens, int64(4096)), // 默认 4096
-			Temperature:      derefOr(p.Temperature, 0.2),      // 默认 0.2
+			MaxTokens:        cmp.Or(p.MaxTokens, int64(65536)), // 提升默认上限至 16K
+			ReasoningEffort:  p.ReasoningEffort,
+			Temperature:      derefOr(p.Temperature, 0.2),
 			TopP:             derefOr(p.TopP, 0.0),
 			FrequencyPenalty: derefOr(p.FrequencyPenalty, 0.0),
 			PresencePenalty:  derefOr(p.PresencePenalty, 0.0),
@@ -163,6 +169,11 @@ func Load(configPath ...string) (*Config, error) {
 	// 默认值保底注入
 	setDefaults(&cfg)
 
+	// 生产环境强制安全拦截：严禁使用默认开源签名密钥保护 Fava SSO
+	if cfg.App.Env == "production" && cfg.App.ReceiptSignSecret == "tallymind_default_secret_key" {
+		return nil, fmt.Errorf("安全拦截: production 环境下必须在 config.toml 中配置自定义的 app.receipt_sign_secret")
+	}
+
 	return &cfg, nil
 }
 
@@ -186,6 +197,7 @@ func setDefaults(cfg *Config) {
 	cfg.Log.File.MaxAge = cmp.Or(cfg.Log.File.MaxAge, 14)
 
 	cfg.LLM.PromptTemplate = cmp.Or(cfg.LLM.PromptTemplate, "prompt/system_prompt.md")
+	cfg.LLM.MaxInputRunes = cmp.Or(cfg.LLM.MaxInputRunes, 3000)
 
 	cfg.Ledger.DataDir = cmp.Or(cfg.Ledger.DataDir, "data")
 	cfg.Ledger.DefaultCurrency = cmp.Or(cfg.Ledger.DefaultCurrency, "CNY")
@@ -209,4 +221,58 @@ func derefOr[T any](ptr *T, fallback T) T {
 		return *ptr
 	}
 	return fallback
+}
+
+// ✅ 优化后 (追加到 internal/config/config.go 末尾：实现 slog.LogValuer 自动打码脱敏)
+// maskSecret 对敏感凭据执行头尾保留打码，同时直观反馈空值或未展开的状态
+func maskSecret(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "(empty)"
+	}
+	runes := []rune(s)
+	if len(runes) <= 8 {
+		return fmt.Sprintf("****(len=%d)", len(runes))
+	}
+	return fmt.Sprintf("%s****%s(len=%d)", string(runes[:4]), string(runes[len(runes)-4:]), len(runes))
+}
+
+func (a AppConfig) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("env", a.Env),
+		slog.Int("port", a.Port),
+		slog.String("public_url", a.PublicURL),
+		slog.String("panel_url", a.PanelURL),
+		slog.String("panel_path", a.PanelPath),
+		slog.String("receipt_sign_secret", maskSecret(a.ReceiptSignSecret)),
+		slog.String("api_token", maskSecret(a.APIToken)),
+		slog.Bool("enable_llm", a.EnableLLM),
+		slog.Bool("enable_http_api", a.EnableHTTPAPI),
+		slog.Bool("enable_wecom_http", a.EnableWeComHTTP),
+		slog.Bool("enable_wecom_wss", a.EnableWeComWSS),
+		slog.Bool("enable_reporter", a.EnableReporter),
+	)
+}
+
+func (p LLMProviderConfig) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("model", p.Model),
+		slog.String("base_url", p.BaseURL),
+		slog.String("api_key", maskSecret(p.APIKey)),
+		slog.Int64("max_tokens", p.MaxTokens),
+		slog.String("reasoning_effort", cmp.Or(p.ReasoningEffort, "default")),
+		slog.String("timeout", p.Timeout),
+	)
+}
+
+func (c LLMConfig) LogValue() slog.Value {
+	attrs := make([]slog.Attr, 0, len(c.Providers)+2)
+	attrs = append(attrs,
+		slog.String("prompt_template", c.PromptTemplate),
+		slog.Int("max_input_runes", c.MaxInputRunes),
+	)
+	for i, p := range c.Providers {
+		attrs = append(attrs, slog.Any(fmt.Sprintf("provider_%d", i), p))
+	}
+	return slog.GroupValue(attrs...)
 }

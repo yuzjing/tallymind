@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"tallymind/internal/config"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -91,11 +92,16 @@ func (h *CallbackHandler) ReceiveMessage(c *gin.Context) {
 	c.String(http.StatusOK, "success")
 
 	go func() {
-		// 使用 context.Background()，防止 Gin 的 c.Request.Context() 被取消
-		bgCtx := context.Background()
+		// 脱离 Gin 请求生命周期，施加 2 分钟总超时，并捕获子协程 Panic 防主进程崩溃
+		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		defer func() {
+			if r := recover(); r != nil {
+				slog.ErrorContext(bgCtx, "[WeCom] 异步处理消息发生 Panic", "fromUser", msg.FromUserName, "panic", r)
+			}
+		}()
+
 		slog.InfoContext(bgCtx, "[WeCom] 收到用户消息", "fromUser", msg.FromUserName, "msgtype", msg.MsgType)
-
 		h.wecomHandler.HandleMessage(bgCtx, msg)
-
 	}()
 }

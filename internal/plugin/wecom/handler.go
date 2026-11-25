@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"tallymind/internal/cron"
-	"tallymind/internal/reporter"
 	"tallymind/internal/service"
 
 	"tallymind/internal/template"
@@ -43,8 +41,9 @@ func (h *WeComHandler) HandleMessage(ctx context.Context, msg *PlainXMLMsg) {
 	//  1. 统一提取：将企微协议消息转为通用的 (文本, 附件列表)
 	userText, attachments, err := h.parseIncomingMessage(ctx, msg)
 	if err != nil {
-		slog.ErrorContext(ctx, "[WeCom] 收到暂不支持的消息类型", "userID", userID, "msgType", msg.MsgType, "err", err)
-		_ = h.client.SendMessage(ctx, NewTextMessage("⚠️ 暂不支持 [%s] 类型消息记账", msg.MsgType))
+		slog.ErrorContext(ctx, "[WeCom] 收到暂不支持的消息类型或素材提取失败", "userID", userID, "msgType", msg.MsgType, "err", err)
+		errText := fmt.Sprintf("⚠️ 暂不支持 [%s] 类型消息记账，或素材获取失败：%v", msg.MsgType, err)
+		_ = h.client.SendMessage(ctx, NewTextMessage(userID, errText))
 		return
 	}
 
@@ -143,25 +142,4 @@ func (h *WeComHandler) parseIncomingMessage(ctx context.Context, msg *PlainXMLMs
 	}
 
 	return userText, attachments, nil
-}
-
-// RegisterCron 将企业微信的周报与月报分发器挂载到调度引擎中
-func (h *WeComHandler) RegisterCron(scheduler *cron.Scheduler) {
-	// 1. 注册周报推送卡片
-	scheduler.OnReport("weekly", func(ctx context.Context, data *reporter.PeriodicReportData) error {
-		cardMsg, err := template.Render[MessageRequest](h.templateDir, "wecom/weekly_report.yaml", data)
-		if err != nil {
-			return err
-		}
-		return h.client.SendMessage(ctx, cardMsg)
-	})
-
-	// 2. 注册月报推送卡片 (复用或使用独立模板)
-	scheduler.OnReport("monthly", func(ctx context.Context, data *reporter.PeriodicReportData) error {
-		cardMsg, err := template.Render[MessageRequest](h.templateDir, h.reportTemplate, data)
-		if err != nil {
-			return err
-		}
-		return h.client.SendMessage(ctx, cardMsg)
-	})
 }
